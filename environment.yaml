@@ -1,0 +1,8 @@
+name: scallopy_env
+channels:
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+    - /content/scallopy-0.1.4-cp39-cp39-manylinux_2_27_x86_64.whl
