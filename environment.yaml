@@ -1,4 +1,4 @@
-name: scallopy_env
+name: niac
 channels:
   - defaults
 dependencies:
