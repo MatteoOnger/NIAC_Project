@@ -330,9 +330,9 @@ class AvoidingArena(gym.Env):
             self._background_image = pygame.transform.scale(
                 pygame.image.load(file_name), (self.cell_size, self.cell_size)
             )
-        if self.agent_image is None:
+        if self._agent_image is None:
             file_name = os.path.join(IMGS_DIR, "agent.png")
-            self.agent_image = pygame.transform.scale(
+            self._agent_image = pygame.transform.scale(
                 pygame.image.load(file_name), (self.cell_size, self.cell_size)
             )
         if self._target_image is None:
