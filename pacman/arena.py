@@ -27,6 +27,7 @@ class AvoidingArena(gym.Env):
         render_mode :str|None=None,
         grid_dim :Tuple[int,int]=(5, 5),
         cell_size :int=64,
+        max_num_moves :int=10,
         num_enemies :int=5,
         default_reward :float=0.0,
         on_success_reward :float=1.0,
@@ -42,6 +43,8 @@ class AvoidingArena(gym.Env):
             A tuple of two integers for ``(grid_x, grid_y)``, by default ``(5, 5)``.
         cell_size : float, optional
             The side length of each cell in pixels, by default ``64``.
+        max_num_moves : int, optional
+            Maximum number of moves to solve the game, by default ``10``.
         num_enemies : int, optional
             Number of enemies, by default ``5``.
         default_reward : float, optional
@@ -68,6 +71,7 @@ class AvoidingArena(gym.Env):
         self.render_mode = render_mode
         self.grid_dim = np.array(grid_dim)
         self.cell_size = cell_size
+        self.max_num_moves = max_num_moves
         self.num_enemies = num_enemies    
         self.default_reward = default_reward
         self.on_success_reward = on_success_reward
@@ -106,6 +110,7 @@ class AvoidingArena(gym.Env):
         self.curr_pos = None
         self.goal_pos = None
         self.enemies = None
+        self.moves_counter = None
 
         #  background agent, goal and enemy images
         self.background_image = None
@@ -182,6 +187,9 @@ class AvoidingArena(gym.Env):
         super().reset(seed=seed)
         empty_pos = [np.array([i,j]) for i in range(self.grid_x) for j in range(self.grid_y)]
 
+        # init counter
+        self.moves_counter = 0
+
         # generate start position
         idx = self.np_random.integers(0, len(empty_pos))
         self.start_pos = empty_pos[idx]
@@ -238,6 +246,10 @@ class AvoidingArena(gym.Env):
         self.curr_pos + direction, 0, self.grid_dim - 1
         )
 
+        # update moves counter
+        self.moves_counter += 1
+        truncated = self.moves_counter >= self.max_num_moves
+
         # compute the reward
         reward, terminated = self.default_reward, False
         if (self.curr_pos == self.enemies).all(axis=1).any():
@@ -249,7 +261,7 @@ class AvoidingArena(gym.Env):
 
         if self.render_mode == "human":
             self._render_frame()
-        return (self._get_obs(), reward, terminated, False, self._get_info())
+        return (self._get_obs(), reward, terminated, truncated, self._get_info())
 
 
     def _get_info(self) -> Dict[str,Any]:
