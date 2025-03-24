@@ -352,8 +352,7 @@ class AvoidingArena(gym.Env):
                 elif (pos == self.goal_pos).all():
                     self.window_surface.blit(self.goal_image, img_pos)
                 elif (pos == self.enemies).all(axis=1).any():
-                    rand_idx = self.np_random.integers(0, 2)
-                    self.window_surface.blit(self.enemy_images[rand_idx], img_pos)
+                    self.window_surface.blit(self.enemy_images[(x+y)%2], img_pos)
 
                 pygame.draw.rect(self.window_surface, (1, 50, 32), rect, 1)
 
