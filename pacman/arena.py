@@ -94,6 +94,12 @@ class AvoidingArena(gym.Env):
             2: np.array([-1, 0]),
             3: np.array([0, -1]),
         }
+        self.str_to_action = {
+            "right": 0,
+            "up": 1,
+            "left": 2,
+            "down": 3
+        }
 
         # initialize environment states
         self.start_pos = None
