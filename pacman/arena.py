@@ -138,24 +138,22 @@ class AvoidingArena(gym.Env):
             return None
 
 
-    def render(self) -> np.ndarray|str|None:
+    def render(self) -> np.ndarray|None:
         """
         Computes the render frames as specified by the attribute ``render_mode`` during the initialization of the environment.
 
         Returns
         -------
-        : np.ndarray | str | None
+        : np.ndarray | None
             The rendering of the environment according to the specified mode.
         """
-        rend = None
-
         if self.render_mode is None:
             LOGGER.warning("Calling render method without specifying any render mode")
         elif self.render_mode == "ansi":
-            rend = self.__str__()
+            print(self)
         elif self.render_mode in {"human", "rgb_array"}:
-            rend = self._render_frame()
-        return rend
+            return self._render_frame()
+        return None
 
 
     def reset(self, seed :int|None=None, options :Dict[str,Any]|None=None) -> Tuple[Dict[str,Any], Dict[str,Any]]:
