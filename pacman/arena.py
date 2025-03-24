@@ -56,7 +56,7 @@ class AvoidingArena(gym.Env):
         default_reward : float, optional
             Default reward, by default ``0.0``.
         on_success_reward : float, optional
-            Goal status reward, by default ``1.0``.
+            Target status reward, by default ``1.0``.
         on_failure_reward : float, optional
             Reward if hit by an enemy, by default ``-1.0``.
         remain_unchanged_reward : float, optional
@@ -274,7 +274,7 @@ class AvoidingArena(gym.Env):
         :Dict[str, Any]
             Auxiliary infomration.
         """
-        return {"manhattan_distance": np.linalg.norm(self.curr_pos - self.goal_pos, ord=1), "moves_counter": self._moves_counter}
+        return {"manhattan_distance": np.linalg.norm(self._curr_pos - self._target_pos, ord=1), "moves_counter": self._moves_counter}
 
 
     def _get_obs(self) -> Dict[str,Any]:
