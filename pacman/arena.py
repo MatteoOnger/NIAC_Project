@@ -15,6 +15,8 @@ LOGGER = logging.getLogger(__name__)
 
 class AvoidingArena(gym.Env):
     """
+    This class implements the arena of the game Pacman Maze
+    by extending and respecting the standard defined by Gym.
     """
 
     metadata = {"render_modes": ["ansi", "human", "rgb_array"], "render_fps": 4}
