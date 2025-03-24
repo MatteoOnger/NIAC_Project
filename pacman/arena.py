@@ -1,221 +1,382 @@
-import cv2
 import gym
-import numpy
+import logging
+import numpy as np
 import os
-import random
-import torch
 
+from gym import spaces
 from typing import *
 
 
 
-IMGS_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), "../imgs"))
+IMGS_DIR = os.path.join(os.path.dirname(__file__), "imgs")
+LOGGER = logging.getLogger(__name__)
 
 
 
 class AvoidingArena(gym.Env):
-  def __init__(
-    self,
-    grid_dim: Tuple[int, int] =(5, 5),
-    cell_size: float = 0.5,
-    dpi: int = 80,
-    num_enemies: int = 5,
-    easy: bool = False,
-    default_reward: float = 0.00,
-    on_success_reward: float = 1.0,
-    on_failure_reward: float = 0.0,
-    remain_unchanged_reward: float = 0.0,
-  ):
     """
-    :param grid_dim, (int, int), a tuple of two integers for (grid_x, grid_y)
-    :param cell_size, float, the side length of each cell, in inches
-    :param dpi, int, dimension (number of pixels) per inch
-    :param num_enemies, int, maximum number of enemies on the arena
     """
-    self.grid_x, self.grid_y = grid_dim
-    self.cell_size = cell_size
-    self.dpi = dpi
-    self.num_enemies = num_enemies
-    self.image_w, self.image_h = self.grid_x * self.cell_size, self.grid_y * self.cell_size
-    self.easy = easy
-    self.default_reward = default_reward
-    self.on_success_reward = on_success_reward
-    self.on_failure_reward = on_failure_reward
-    self.remain_unchanged_reward = remain_unchanged_reward
 
-    # Initialize environment states
-    self.curr_pos = None
-    self.start_pos = None
-    self.goal_pos = None
-    self.enemies = None
+    metadata = {"render_modes": ["ansi", "human", "rgb_array"], "render_fps": 4}
 
-    # Load background and enemy images
-    self.background_image = cv2.imread(os.path.join(IMGS_DIR, "back.webp"))
-    enemy_image_1 = cv2.imread(os.path.join(IMGS_DIR, "enemy1.webp"), cv2.IMREAD_UNCHANGED)
-    enemy_image_2 = cv2.imread(os.path.join(IMGS_DIR, "enemy2.webp"), cv2.IMREAD_UNCHANGED)
-    self.enemy_images = [enemy_image_1, enemy_image_2]
-    self.goal_image = cv2.imread(os.path.join(IMGS_DIR, "flag.png"), cv2.IMREAD_UNCHANGED)
-    self.agent_image = cv2.imread(os.path.join(IMGS_DIR, "agent.png"), cv2.IMREAD_UNCHANGED)
 
-  def reset(self):
-    # Generate start position
-    self.start_pos = self.sample_point()
-    self.curr_pos = self.start_pos
+    def __init__(
+        self,
+        render_mode :str|None=None,
+        grid_dim :Tuple[int,int]=(5, 5),
+        cell_size :int=64,
+        num_enemies :int=5,
+        default_reward :float=0.0,
+        on_success_reward :float=1.0,
+        on_failure_reward :float=-1.0,
+        remain_unchanged_reward :float=0.0,
+    ):
+        """
+        Parameters
+        ----------
+        render_mode : str | None, optional
+            Render mode to help visualise what the agent sees, by default ``None``.
+        grid_dim : Tuple[int, int], optional
+            A tuple of two integers for ``(grid_x, grid_y)``, by default ``(5, 5)``.
+        cell_size : float, optional
+            The side length of each cell in pixels, by default ``64``.
+        num_enemies : int, optional
+            Number of enemies, by default ``5``.
+        default_reward : float, optional
+            Default reward, by default ``0.0``.
+        on_success_reward : float, optional
+            Goal status reward, by default ``1.0``.
+        on_failure_reward : float, optional
+            Reward if hit by an enemy, by default ``-1.0``.
+        remain_unchanged_reward : float, optional
+            Reward for staying in the same position, by default ``0.0``.
 
-    if self.easy:
-      possible_positions = []
-      for (off_x, off_y) in [(0, 1), (1, 0), (0, -1), (1, 0)]:
-        goal_x = self.start_pos[0] + off_x
-        goal_y = self.start_pos[1] + off_y
-        if 0 <= goal_x < self.grid_x and 0 <= goal_y < self.grid_y:
-          possible_positions.append((goal_x, goal_y))
-      self.goal_pos = possible_positions[random.randrange(0, len(possible_positions))]
-    else:
-      # Generate end position
-      self.goal_pos = self.sample_point()
-      while self.goal_pos == self.start_pos:
-        self.goal_pos = self.sample_point()
+        Raises
+        ------
+        ValueError
+            - If the number of enemies is greater than the number of cells minus two
+            (one cell for the start state and one for the goal state).
+            - If the renderning mode is invalid.
+        """
+        if num_enemies > (grid_dim[0] * grid_dim[1] - 2):
+            raise ValueError("Too many enemies")
+        if render_mode is not None and render_mode not in self.metadata["render_modes"]:
+            raise ValueError("Render mode must be None, 'human' or 'rgb_array'")
 
-    # Generate enemy positions
-    self.enemies = []
-    self.enemy_types = []
-    num_tries = 0
-    while len(self.enemies) < self.num_enemies and num_tries < 100:
-      num_tries += 1
-      try_pos = self.sample_point()
-      if self.ok_enemy_position(try_pos):
-        self.enemies.append(try_pos)
-        self.enemy_types.append(random.randint(0, 1))
+        self.render_mode = render_mode
+        self.grid_dim = np.array(grid_dim)
+        self.cell_size = cell_size
+        self.num_enemies = num_enemies    
+        self.default_reward = default_reward
+        self.on_success_reward = on_success_reward
+        self.on_failure_reward = on_failure_reward
+        self.remain_unchanged_reward = remain_unchanged_reward
 
-    # Return
-    return ()
+        self.grid_x, self.grid_y = grid_dim
+        self.window_size_w, self.window_size_h = self.grid_x * self.cell_size, self.grid_y * self.cell_size
 
-  def step(self, action):
-    prev_pos = self.curr_pos
+        # obeservations
+        self.observation_space = spaces.Dict(
+            {
+                "agent": spaces.Box(0, self.grid_dim - 1, dtype=int),
+                "goal": spaces.Box(0, self.grid_dim -1 , dtype=int),
+                "enemies": [spaces.Box(0, self.grid_dim -1 , dtype=int) for _ in range(self.num_enemies)]
+            }
+        )
 
-    # Step action
-    if action == 0 and self.curr_pos[1] < self.grid_y - 1: # If can move up
-      self.curr_pos = (self.curr_pos[0], self.curr_pos[1] + 1)
-    elif action == 1 and self.curr_pos[0] < self.grid_x - 1: # If can move right
-      self.curr_pos = (self.curr_pos[0] + 1, self.curr_pos[1])
-    elif action == 2 and self.curr_pos[1] > 0: # If can move down
-      self.curr_pos = (self.curr_pos[0], self.curr_pos[1] - 1)
-    elif action == 3 and self.curr_pos[0] > 0: # If can move left
-      self.curr_pos = (self.curr_pos[0] - 1, self.curr_pos[1])
+        # possible actions, corresponding to "right", "up", "left", "down"
+        self.action_space = spaces.Discrete(4)
+        self.action_to_direction = {
+            0: np.array([1, 0]),
+            1: np.array([0, 1]),
+            2: np.array([-1, 0]),
+            3: np.array([0, -1]),
+        }
 
-    # Check if reached goal position
-    done, reward = False, self.default_reward
-    if self.curr_pos in self.enemies: done, reward = True, self.on_failure_reward # Hitting enemy
-    elif self.curr_pos == self.goal_pos: done, reward = True, self.on_success_reward # Reaching goal
-    elif self.curr_pos == prev_pos: done, reward = False, self.remain_unchanged_reward # Stay in same position
+        # initialize environment states
+        self.start_pos = None
+        self.curr_pos = None
+        self.goal_pos = None
+        self.enemies = None
 
-    # Return
-    return ((), done, reward, ())
+        #  background agent, goal and enemy images
+        self.background_image = None
+        self.goal_image = None
+        self.agent_image = None
+        self.enemy_images = None 
 
-  def hidden_state(self):
-    """
-    Return a tuple (current_position, goal_position, enemy_positions)
-    where enemy positions is a list of enemy positions
+        # if human-rendering is used, <self.window> will be a reference
+        # to the window that we draw to. <self.clock> will be a clock that is used 
+        # to ensure that the environment is rendered at the correct framerate 
+        self.window_surface = None
+        self.clock = None
+        return
 
-    This hidden_state should not be used by model that desires to solve the game
-    """
-    return (self.curr_pos, self.goal_pos, self.enemies)
 
-  def render(self):
-    w, h = int(self.image_w * self.dpi), int(self.image_h * self.dpi)
-    # image = numpy.zeros((w, h, 3), dtype=numpy.uint8)
-    image = numpy.zeros((h, w, 3), dtype=numpy.uint8)
+    def close(self) -> None:
+        """
+        After the user has finished using the environment, close contains the code necessary to "clean up" the environment.
+        This is critical for closing rendering windows, database or HTTP connections.
+        Calling ``close`` on an already closed environment has no effect and won't raise an error.
+        """
+        if self.window_surface is not None and self.render_mode in {"human", "rgb_array"}:
+            try:
+                import pygame
+            except ImportError:
+                raise ImportError("pygame is not installed") from None
 
-    # Setup the background
-    image[0:h, 0:w] = self.background_image[0:h, 0:w]
+            pygame.display.quit()
+            pygame.quit()
+            return None
 
-    # Draw the current position
-    self._paint_spirit(image, self.agent_image, self.curr_pos)
 
-    # Draw the goal position
-    self._paint_spirit(image, self.goal_image, self.goal_pos)
+    def render(self) -> np.ndarray|str|None:
+        """
+        Computes the render frames as specified by the attribute ``render_mode`` during the initialization of the environment.
 
-    # Draw the enemy position
-    for (i, enemy_pos) in enumerate(self.enemies):
-      self._paint_spirit(image, self.enemy_images[self.enemy_types[i]], enemy_pos)
+        Returns
+        -------
+        : np.ndarray | str | None
+            The rendering of the environment according to the specified mode.
+        """
+        rend = None
 
-    return image
+        if self.render_mode is None:
+            LOGGER.warning("Calling render method without specifying any render mode")
+        elif self.render_mode == "ansi":
+            rend = self.__str__()
+        elif self.render_mode in {"human", "rgb_array"}:
+            rend = self._render_frame()
+        return rend
 
-  def render_torch_tensor(self, image=None):
-    image = self.render() if image is None else image
-    image = numpy.ascontiguousarray(image, dtype=numpy.float32) / 255
-    torch_image = torch.tensor(image).permute(2, 0, 1).float()
-    return torch.stack([torch_image])
 
-  def _paint_spirit(self, background, spirit, orig_cell_pos):
-    cell_pos = (orig_cell_pos[0], self.grid_y - orig_cell_pos[1] - 1)
-    cell_w, cell_h = self.cell_pixel_size()
-    agent_image = cv2.resize(spirit, (cell_w, cell_h), interpolation=cv2.INTER_AREA)
-    agent_offset_x, agent_offset_y = cell_pos[0] * cell_w, cell_pos[1] * cell_h
-    agent_end_x, agent_end_y = agent_offset_x + cell_w, agent_offset_y + cell_h
-    agent_img_gray = agent_image[:, :, 3]
-    _, mask = cv2.threshold(agent_img_gray, 120, 255, cv2.THRESH_BINARY)
-    mask_inv = cv2.bitwise_not(agent_img_gray)
-    source = background[agent_offset_y:agent_end_y, agent_offset_x:agent_end_x]
-    bg = cv2.bitwise_or(source, source, mask=mask_inv)
-    fg = cv2.bitwise_and(agent_image, agent_image, mask=mask)
-    background[agent_offset_y:agent_end_y, agent_offset_x:agent_end_x] = cv2.add(bg, fg[:, :, 0:3])
+    def reset(self, seed :int|None=None, options :Dict[str,Any]|None=None) -> Tuple[Dict[str,Any], Dict[str,Any]]:
+        """
+        Resets the environment to an initial internal state.
 
-  def paint_color(self, background, colors, cell_pos):
-    size_x, size_y = 10, 10
-    cell_pos = (cell_pos[0], self.grid_y - cell_pos[1] - 1)
-    cell_w, cell_h = self.cell_pixel_size()
-    agent_offset_x, agent_offset_y = cell_pos[0] * cell_w, cell_pos[1] * cell_h
-    agent_end_x, agent_end_y = agent_offset_x + size_x, agent_offset_y + size_y
-    get_channel = lambda c: numpy.ones((size_y, size_x), dtype=numpy.uint8) * int(255 * colors[c])
-    color = numpy.transpose(numpy.stack([get_channel(i) for i in range(3)]), (1, 2, 0))
-    background[agent_offset_y:agent_end_y, agent_offset_x:agent_end_x] = color
+        Parameters
+        ----------
+        seed : int | None, optional
+            The seed that is used to initialize the environment's PRNG (``np_random``) and
+            the read-only attribute ``np_random_seed``.
+            If the environment does not already have a PRNG and ``seed=None`` (the default option) is passed,
+            a seed will be chosen from some source of entropy (e.g. timestamp or /dev/urandom).
+            However, if the environment already has a PRNG and ``seed=None`` is passed, the PRNG will NOT be reset
+            and the env's attribute ``np_random_seed`` will NOT be altered.
+            If you pass an integer, the PRNG will be reset even if it already exists.
+            Usually, you want to pass an integer right after the environment has been initialized and then never again.
+        options : Dict[str, Any] | None, optional
+            This parameter is ignored, present here for consistency, by default ``None``.
 
-  def print_state(self):
-    print("┌" + ("─" * ((self.grid_x + 2) * 2 - 3)) + "┐")
-    for j in range(self.grid_y - 1, -1, -1):
-      print("│", end=" ")
-      for i in range(self.grid_x):
-        print(self.pos_char((i, j)), end=" ")
-      print("│")
-    print("└" + ("─" * ((self.grid_x + 2) * 2 - 3)) + "┘")
+        Returns
+        -------
+        :Tuple[Dict[str, Any], Dict[str, Any]]
+            Observation of the initial state and auxiliary infomration.
+        """
+        super().reset(seed=seed)
+        empty_pos = [np.array([i,j]) for i in range(self.grid_x) for j in range(self.grid_y)]
 
-  def pos_char(self, pos):
-    if pos == self.curr_pos: return 'C'
-    elif pos == self.start_pos: return 'S'
-    elif pos == self.goal_pos: return 'G'
-    elif pos in self.enemies: return '▒'
-    else: return ' '
+        # generate start position
+        idx = self.np_random.integers(0, len(empty_pos))
+        self.start_pos = empty_pos[idx]
+        del empty_pos[idx]
 
-  def string_of_action(self, action):
-    if action == 0: return "up"
-    elif action == 1: return "right"
-    elif action == 2: return "down"
-    elif action == 3: return "left"
-    else: raise Exception(f"Unknown action `{action}`")
+        # set current position
+        self.curr_pos = self.start_pos
 
-  def sample_point(self):
-    return (random.randint(0, self.grid_x - 1), random.randint(0, self.grid_y - 1))
+        # generate end position
+        idx = self.np_random.integers(0, len(empty_pos))
+        self.goal_pos = empty_pos[idx]
+        del empty_pos[idx]
 
-  def ok_enemy_position(self, pos):
-    return self.manhatten_distance(pos, self.start_pos) > 1 and self.manhatten_distance(pos, self.goal_pos) > 1
+        # generate enemy positions
+        idxs = self.np_random.choioce(len(empty_pos), size=self.num_enemies, replace=False)
+        self.enemies = empty_pos[idxs]
+        for idx in idxs: del empty_pos[idx]
 
-  def cell_pixel_size(self):
-    return (int(self.cell_size * self.dpi), int(self.cell_size * self.dpi))
+        if self.render_mode == "human":
+            self._render_frame()
+        return (self._get_obs(), self._get_info())
 
-  def manhatten_distance(self, p1, p2):
-    return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
-def crop_cell_image(image, grid_dim, cell_pixel_size, orig_cell_pos):
-  cell_pos = (orig_cell_pos[0], grid_dim[1] - orig_cell_pos[1] - 1)
-  cell_w, cell_h = cell_pixel_size
-  agent_offset_x, agent_offset_y = cell_pos[0] * cell_w, cell_pos[1] * cell_h
-  agent_end_x, agent_end_y = agent_offset_x + cell_w, agent_offset_y + cell_h
-  return image[agent_offset_y:agent_end_y, agent_offset_x:agent_end_x]
+    def step(self, action :int) -> Tuple[Dict[str,Any], float, bool, bool, Dict[str,Any]]:
+        """
+        Run one timestep of the environment's dynamics using the agent actions.
+        When the end of an episode is reached (``terminated or truncated``), it is necessary to call the method ``reset`` to
+        reset this environment's state for the next episode.
 
-def crop_cell_image_torch(image, grid_dim, cell_pixel_size, orig_cell_pos):
-  cell_pos = (orig_cell_pos[0], grid_dim[1] - orig_cell_pos[1] - 1)
-  cell_w, cell_h = cell_pixel_size
-  agent_offset_x, agent_offset_y = cell_pos[0] * cell_w, cell_pos[1] * cell_h
-  agent_end_x, agent_end_y = agent_offset_x + cell_w, agent_offset_y + cell_h
-  return image[:, agent_offset_y:agent_end_y, agent_offset_x:agent_end_x]
+        Parameters
+        ----------
+        action : int
+            An action provided by the agent to update the environment state.
+
+        Returns
+        -------
+        observation : Dict[str,Any]
+            An element of the environment's attribute ``observation_space`` as the next observation due to the agent actions.
+        reward : float
+            The reward as a result of taking the action.
+        terminated : bool 
+            Whether the agent reaches the terminal state (as defined under the MDP of the task)
+            If true, the user needs to call the method ``reset``.
+        truncated : bool
+            Whether the truncation condition outside the scope of the MDP is satisfied, typically, this is a timelimit.
+            Currently always set to ``False``.
+        info : Dict[str,Any]
+            Contains auxiliary diagnostic information (helpful for debugging, learning, and logging).
+        """
+        prev_pos = self.curr_pos
+        direction = self.action_to_direction[action]
+
+        # update agent position
+        self.curr_pos = np.clip(
+        self.curr_pos + direction, 0, self.grid_dim - 1
+        )
+
+        # compute the reward
+        reward, terminated = self.default_reward, False
+        if self.curr_pos in self.enemies:
+            reward, terminated = self.on_failure_reward, True
+        elif self.curr_pos == self.goal_pos:
+            reward, terminated = self.on_success_reward, True
+        elif self.curr_pos == prev_pos:
+            reward, terminated = self.remain_unchanged_reward, False
+
+        if self.render_mode == "human":
+            self._render_frame()
+        return (self._get_obs(), reward, terminated, False, self._get_info())
+
+
+    def _get_info(self) -> Dict[str,Any]:
+        """
+        Returns auxiliary infomration.
+
+        Returns
+        -------
+        :Dict[str, Any]
+            Auxiliary infomration.
+        """
+        return {"manhattan_distance": np.linalg.norm(self.curr_pos - self.goal_pos, ord=1)}
+
+
+    def _get_obs(self) -> Dict[str,Any]:
+        """
+        Returns observation.
+
+        Returns
+        -------
+        :Dict[str, Any]
+            Observation.
+        """
+        return {"agent": self.curr_pos, "goal": self.goal_pos, "enemies": self.enemies}
+
+
+    def _render_frame(self) -> np.ndarray|None:
+        """
+        Computes the render frames.
+
+        Returns
+        -------
+        : np.ndarray | None
+            The rendering of the environment according to the specified mode.
+
+        Raises
+        ------
+        ImportError
+            - If Pygame is not installed.
+        """
+        try:
+            import pygame
+        except ImportError:
+            raise ImportError("Pygame is not installed") from None
+
+        # init rendering
+        if self.window_surface is None:
+            pygame.init()
+
+        if self.render_mode == "human":
+            pygame.display.init()
+            pygame.display.set_caption("Pacman Maze")
+            self.window_surface = pygame.display.set_mode((self.window_size_w, self.window_size_h))
+        elif self.render_mode == "rgb_array":
+            self.window_surface = pygame.Surface((self.window_size_w, self.window_size_h))
+
+        assert(self.window_surface is not None)
+
+        if self.clock is None:
+            self.clock = pygame.time.Clock()
+
+        # load images
+        if self.background_image is None:
+            file_name = os.path.join(IMGS_DIR, "back.webp")
+            self.background_image = pygame.transform.scale(
+                pygame.image.load(file_name), (self.cell_size, self.cell_size)
+            )
+        if self.goal_image is None:
+            file_name = os.path.join(IMGS_DIR, "flag.png")
+            self.goal_image = pygame.transform.scale(
+                pygame.image.load(file_name), (self.cell_size, self.cell_size)
+            )
+        if self.agent_image is None:
+            file_name = os.path.join(IMGS_DIR, "agent.png")
+            self.agent_image = pygame.transform.scale(
+                pygame.image.load(file_name), (self.cell_size, self.cell_size)
+            )
+        if self.enemy_images is None:
+            file_names = [
+                os.path.join(IMGS_DIR, "enemy1.webp"),
+                os.path.join(IMGS_DIR, "enemy2.webp")
+                ]
+            self.enemy_images = [
+                pygame.transform.scale(
+                    pygame.image.load(f_name), (self.cell_size, self.cell_size)
+                ) for f_name in file_names
+            ]
+
+        for y in range(self.grid_y):
+            for x in range(self.grid_x):
+                pos = (x, y)
+                img_pos = (x * self.cell_size, y * self.cell_size)
+                rect = (*img_pos, *self.cell_size)
+
+                self.window_surface.blit(self.background_image, img_pos)
+                if (pos == self.curr_pos).all():
+                    self.window_surface.blit(self.agent_image, img_pos)
+                elif (pos == self.goal_pos).all():
+                    self.window_surface.blit(self.goal_image, img_pos)
+                elif (pos == self.enemies).all(axis=1).any():
+                    rand_idx = self.np_random.integers(0, 2)
+                    self.window_surface.blit(self.enemy_images[rand_idx], img_pos)
+
+                pygame.draw.rect(self.window_surface, (1, 50, 32), rect, 1)
+
+        if self.render_mode == "human":
+            pygame.event.pump()
+            pygame.display.update()
+            self.clock.tick(self.metadata["render_fps"])
+        elif self.render_mode == "rgb_array":
+            return np.transpose(
+                np.array(pygame.surfarray.pixels3d(self.window_surface)), axes=(1, 0, 2)
+            )
+        return None
+
+
+    def __str__(self) -> str:
+        s = "┌" + ("─" * (2 * (self.grid_x + 2) - 3)) + "┐\n"
+        for y in range(self.grid_y - 1, -1, -1):
+            s += "│ "
+            for x in range(self.grid_x):
+                pos = np.array((x,y))
+                if (pos == self.curr_pos).all():
+                    s += "C "
+                elif (pos == self.start_pos).all():
+                    s += "S "
+                elif (pos == self.goal_pos).all():
+                    s += "G "
+                elif (pos == self.enemies).all(axis=1).any():
+                    s += "E "
+                else:
+                    s += "  "
+            s += "│\n"
+        s += "└" + ("─" * ((self.grid_x + 2) * 2 - 3)) + "┘\n"
+        return s
