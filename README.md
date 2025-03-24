@@ -2,11 +2,12 @@
 
 This repository contains all the material related to the project for the courses of <i>Natural Interaction</i> and <i>Affective Computing</i>:
 <ul>
-  <li>Project: <b>###</b>
+  <li>Project: <b>Pacman Maze Solver</b>
+  <li>Authors: <b>Stefano Capelli, Matteo Onger</b>
   <li>Instructor: <b>Prof. Boccignone Giuseppe</b>
 </ul>
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MatteoOnger/NIAC_Project/blob/main/NIAC_DAI.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MatteoOnger/NIAC_Project/blob/main/NIAC_PMS.ipynb)
 
 This work is licensed under a
 [Creative Commons Attribution-ShareAlike 4.0 International License][cc-by-sa].
