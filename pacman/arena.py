@@ -82,7 +82,7 @@ class AvoidingArena(gym.Env):
             {
                 "agent": spaces.Box(0, self.grid_dim - 1, dtype=int),
                 "goal": spaces.Box(0, self.grid_dim -1 , dtype=int),
-                "enemies": [spaces.Box(0, self.grid_dim -1 , dtype=int) for _ in range(self.num_enemies)]
+                "enemies": spaces.Tuple(spaces.Box(0, 5 , dtype=int) for _ in range(3))
             }
         )
 
@@ -192,9 +192,8 @@ class AvoidingArena(gym.Env):
         del empty_pos[idx]
 
         # generate enemy positions
-        idxs = self.np_random.choioce(len(empty_pos), size=self.num_enemies, replace=False)
-        self.enemies = empty_pos[idxs]
-        for idx in idxs: del empty_pos[idx]
+        idxs = self.np_random.choice(len(empty_pos), size=self.num_enemies, replace=False)
+        self.enemies = np.array([empty_pos[idx] for idx in idxs])
 
         if self.render_mode == "human":
             self._render_frame()
@@ -237,11 +236,11 @@ class AvoidingArena(gym.Env):
 
         # compute the reward
         reward, terminated = self.default_reward, False
-        if self.curr_pos in self.enemies:
+        if (self.curr_pos == self.enemies).all(axis=1).any():
             reward, terminated = self.on_failure_reward, True
-        elif self.curr_pos == self.goal_pos:
+        elif (self.curr_pos == self.goal_pos).all():
             reward, terminated = self.on_success_reward, True
-        elif self.curr_pos == prev_pos:
+        elif (self.curr_pos == prev_pos).all():
             reward, terminated = self.remain_unchanged_reward, False
 
         if self.render_mode == "human":
@@ -339,7 +338,7 @@ class AvoidingArena(gym.Env):
             for x in range(self.grid_x):
                 pos = (x, y)
                 img_pos = (x * self.cell_size, y * self.cell_size)
-                rect = (*img_pos, *self.cell_size)
+                rect = (*img_pos, self.cell_size, self.cell_size)
 
                 self.window_surface.blit(self.background_image, img_pos)
                 if (pos == self.curr_pos).all():
