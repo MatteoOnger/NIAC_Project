@@ -4,7 +4,7 @@ channels:
   - menpo
   - defaults
 dependencies:
-  - python=3.9
+  - python=3.10
   - pip
   - pip:
-    - /content/scallopy-0.1.4-cp39-cp39-manylinux_2_27_x86_64.whl
+    - /content/scallopy-0.2.4-cp310-cp310-manylinux_2_27_x86_64.whl
