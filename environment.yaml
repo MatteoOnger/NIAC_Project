@@ -5,6 +5,7 @@ channels:
   - defaults
 dependencies:
   - python=3.10
+  - pytorch
   - pip
   - pip:
     - /content/scallopy-0.2.4-cp310-cp310-manylinux_2_27_x86_64.whl
