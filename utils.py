@@ -23,7 +23,7 @@ def extract_cell(rgb_arr :np.ndarray, x :int, y :int, cell_size_x :int, cell_siz
         
     Returns
     -------
-    np.ndarray
+    : np.ndarray
         A 3D NumPy array representing the extracted cell from the original image. The shape of the array
         will be (cell_size_y, cell_size_x, C), where C is the number of color channels in the original image.
         
