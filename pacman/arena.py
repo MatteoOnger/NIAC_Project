@@ -87,7 +87,7 @@ class AvoidingArena(gym.Env):
         self.render_mode = render_mode
 
         self.grid_x, self.grid_y = grid_dim
-        self.window_size_w, self.window_size_h = self.grid_x * self.cell_size, self.grid_y * self.cell_size
+        self.window_size_x, self.window_size_y = self.grid_x * self.cell_size, self.grid_y * self.cell_size
 
         # obeservations
         self.observation_space = spaces.Dict(
@@ -244,7 +244,7 @@ class AvoidingArena(gym.Env):
 
         # update agent position
         self._curr_pos = np.clip(
-        self._curr_pos + direction, 0, self.grid_dim - 1
+            self._curr_pos + direction, 0, self.grid_dim - 1
         )
 
         # update moves counter
@@ -315,9 +315,9 @@ class AvoidingArena(gym.Env):
         if self.render_mode == "human":
             pygame.display.init()
             pygame.display.set_caption("Pacman Maze")
-            self._window_surface = pygame.display.set_mode((self.window_size_w, self.window_size_h))
+            self._window_surface = pygame.display.set_mode((self.window_size_x, self.window_size_y))
         elif self.render_mode == "rgb_array":
-            self._window_surface = pygame.Surface((self.window_size_w, self.window_size_h))
+            self._window_surface = pygame.Surface((self.window_size_x, self.window_size_y))
 
         assert(self._window_surface is not None)
 
