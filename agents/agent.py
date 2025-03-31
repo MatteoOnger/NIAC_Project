@@ -17,7 +17,7 @@ class Agent():
     """
     """
 
-    def __init__(self, grid_x :int, grid_y :int, eps :float=0.9, provenance :str='difftopkproofs'):
+    def __init__(self, grid_x :int, grid_y :int, eps :float=0.1, provenance :str='difftopkproofs'):
         self.grid_x = grid_x
         self.grid_y = grid_y
         self.eps = eps
@@ -65,7 +65,7 @@ class Agent():
         actions = [ACTION(res[i][1][0]) for i in range(len(res))]
         probs = torch.tensor([res[i][0] for i in range(len(res))])
 
-        tmp = {actions[i].name:probs[i] for i in range(len(res))}
+        tmp = {actions[i].name:round(float(probs[i]), 2) for i in range(len(res))}
 
         LOGGER.debug(
             f"positions:\n"
