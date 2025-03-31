@@ -90,7 +90,7 @@ class Agent():
             f"positions:\n"
             f" - agent -> {nodes[torch.argmax(agent_p)]} with prob. {torch.max(agent_p)}\n"
             f" - target -> {nodes[torch.argmax(target_p)]} with prob. {torch.max(target_p)}\n"
-            f" - enemies -> {[nodes[i] for i in range(len(enemy_p)) if enemy_p[i] > 0.5]} with prob. {enemy_p[enemy_p > 0.5].tolist()}"
+            f" - enemies -> {[node for node in nodes if enemy_p[node] > 0.5]} with prob. {enemy_p[enemy_p > 0.5].tolist()}"
         )
         LOGGER.info(f"next action: {tmp}")
         return actions[torch.argmax(probs)]
