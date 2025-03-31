@@ -25,6 +25,12 @@ class Agent():
         return
 
 
+    def compute_next_action(self):
+        #TODO: call neural component to "read" the board [NOT implemented yet]
+        #TODO: call logical component to compute the next moves [implemented]
+        pass
+
+
     def _logical_comp(self, agent_p :torch.Tensor, target_p :torch.Tensor, enemy_p :torch.Tensor) -> AvoidingArena.Actions:
         """Logical component of the model.
 
@@ -37,7 +43,7 @@ class Agent():
             For each cell, probability that it contains the agent.
         target_p : torch.Tensor of shape (grid_x, grid_y)
             For each cell, probability that it contains the target.
-        enemy_p : torch.Tensor of shape (grid_x grid_y,)
+        enemy_p : torch.Tensor of shape (grid_x, grid_y)
             For each cell, probability that it contains an enemy.
 
         Returns
@@ -94,3 +100,7 @@ class Agent():
         )
         LOGGER.info(f"next action: {tmp}")
         return actions[torch.argmax(probs)]
+
+
+    def _neural_comp(self):
+        pass
