@@ -25,7 +25,26 @@ class Agent():
         return
 
 
-    def logical_comp(self, agent_p :torch.Tensor, target_p :torch.Tensor, enemy_p :torch.Tensor) -> AvoidingArena.Actions:
+    def _logical_comp(self, agent_p :torch.Tensor, target_p :torch.Tensor, enemy_p :torch.Tensor) -> AvoidingArena.Actions:
+        """Logical component of the model.
+
+        Given a probabilistic classification of each cell in the game,
+        compute the next move to be made to reach the target by the shortest path.
+
+        Parameters
+        ----------
+        agent_p : torch.Tensor of shape (grid_x, grid_y)
+            For each cell, probability that it contains the agent.
+        target_p : torch.Tensor of shape (grid_x, grid_y)
+            For each cell, probability that it contains the target.
+        enemy_p : torch.Tensor of shape (grid_x grid_y,)
+            For each cell, probability that it contains an enemy.
+
+        Returns
+        -------
+        : AvoidingArena.Actions
+            Next action to be performed.
+        """
         nodes = [(i,j) for i in range(self.grid_x) for j in range(self.grid_y)]
 
         ctx = scallopy.ScallopContext(provenance=self.provenance)
@@ -36,11 +55,11 @@ class Agent():
         ctx.add_relation("node", (int, int))
 
         # add facts to relations
-        ctx.add_facts("actor", [(agent_p[i], node) for i, node in enumerate(nodes)])
-        ctx.add_facts("target", [(target_p[i], node) for i, node in enumerate(nodes)])
+        ctx.add_facts("actor", [(agent_p[node], node) for node in nodes])
+        ctx.add_facts("target", [(target_p[node], node) for node in nodes])
         ctx.add_facts(
             "node",
-            [(torch.clip(1 - enemy_p[i] - self.eps, min=0), node) for i, node in enumerate(nodes)],
+            [(torch.clip(1 - enemy_p[node] - self.eps, min=0), node) for node in nodes],
         ) # <- self.eps> to penalise longer walks
 
         # rules defining edges according to valid rules
