@@ -4,7 +4,7 @@ import torch
 
 from typing import *
 
-from pacman.arena import AvoidingArena
+from ..pacman.arena import AvoidingArena
 
 
 
