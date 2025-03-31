@@ -62,7 +62,7 @@ class Agent():
             [(torch.clip(1 - enemy_p[node] - self.eps, min=0), node) for node in nodes],
         ) # <- self.eps> to penalise longer walks
 
-        # rules defining edges according to valid rules
+        # rules defining edges according to valid moves
         ctx.add_rule(f"edge(x, y, xp, y, {ACTION.RIGHT.value}) = node(x, y) and node(xp, y) and xp == x + 1")
         ctx.add_rule(f"edge(x, y, x, yp, {ACTION.UP.value})    = node(x, y) and node(x, yp) and yp == y + 1")
         ctx.add_rule(f"edge(x, y, xp, y, {ACTION.LEFT.value})  = node(x, y) and node(xp, y) and xp == x - 1")
