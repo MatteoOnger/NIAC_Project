@@ -155,7 +155,7 @@ class AvoidingArena(gym.Env):
             The rendering of the environment according to the specified mode.
         """
         if self.render_mode is None:
-            LOGGER.warning("Calling render method without specifying any render mode")
+            LOGGER.warning("calling render method without specifying any render mode")
         elif self.render_mode == "ansi":
             print(self)
         elif self.render_mode in {"human", "rgb_array"}:
