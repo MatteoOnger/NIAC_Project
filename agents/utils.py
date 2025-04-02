@@ -66,6 +66,7 @@ class Memory():
     def push(self, transition :Transition) -> None:
         """
         Save a new transition.
+        If the memory is full, the oldest transaction is overwritten.
 
         Parameters
         ----------
