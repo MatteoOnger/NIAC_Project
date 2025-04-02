@@ -1,4 +1,12 @@
 import numpy as np
+import random
+
+from collections import namedtuple, deque
+from typing import *
+
+
+
+Transition = namedtuple('Transition', ('state', 'action', 'reward', 'done', 'next_state'))
 
 
 
@@ -36,3 +44,54 @@ def extract_cell(rgb_arr :np.ndarray, x :int, y :int, cell_size_x :int, cell_siz
         cell_size_y = cell_size_x
     cell_img = rgb_arr[y*cell_size_y:(y+1)*cell_size_y, x*cell_size_x:(x+1)*cell_size_x, :]
     return cell_img
+
+
+
+class Memory():
+    """
+    This class implements a memory for storing and sampling ``Transition``. 
+    """
+
+    def __init__(self, capacity :int=1024):
+        """
+        Parameters
+        ----------
+        capacity : int, optional
+            Capacity of the memory in number of transitions, by default ``1024``.
+        """
+        self.memory = deque([], maxlen=capacity)
+        return
+
+
+    def push(self, transition :Transition) -> None:
+        """
+        Save a new transition.
+
+        Parameters
+        ----------
+        transition : Transition
+            New transition to store.
+        """
+        self.memory.append(transition)
+        return None
+
+
+    def sample(self, batch_size :int=16) -> Transition:
+        """
+        Draw randomly batch_size samples from the memory.
+
+        Parameters
+        ----------
+        batch_size : int
+            Number of sample to draw by default ``16``.
+
+        Returns
+        -------
+        : Transition
+            Transaction samples.
+        """
+        return random.sample(self.memory, batch_size)
+
+
+    def __len__(self) -> int:
+        return len(self.memory)
