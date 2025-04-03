@@ -88,6 +88,12 @@ class AvoidingArena(gym.Env):
 
         self.grid_x, self.grid_y = grid_dim
         self.window_size_x, self.window_size_y = self.grid_x * self.cell_size, self.grid_y * self.cell_size
+        self.rewards = {
+            "default": self.default_reward,
+            "on_success": self.on_success_reward,
+            "on_failure": self.on_failure_reward,
+            "unchanged": self.remain_unchanged_reward
+        }
 
         # obeservations
         self.observation_space = spaces.Dict(
