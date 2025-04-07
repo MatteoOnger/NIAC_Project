@@ -39,7 +39,6 @@ class AvoidingArena(gym.Env):
         default_reward :float=0.0,
         on_success_reward :float=1.0,
         on_failure_reward :float=-1.0,
-        remain_unchanged_reward :float=0.0,
         render_mode :str|None=None,
     ):
         """
@@ -59,8 +58,6 @@ class AvoidingArena(gym.Env):
             Target status reward, by default ``1.0``.
         on_failure_reward : float, optional
             Reward if hit by an enemy, by default ``-1.0``.
-        remain_unchanged_reward : float, optional
-            Reward for staying in the same position, by default ``0.0``.
         render_mode : str | None, optional
             Render mode to help visualise what the agent sees, by default ``None``.
 
@@ -83,7 +80,6 @@ class AvoidingArena(gym.Env):
         self.default_reward = default_reward
         self.on_success_reward = on_success_reward
         self.on_failure_reward = on_failure_reward
-        self.remain_unchanged_reward = remain_unchanged_reward
         self.render_mode = render_mode
 
         self.grid_x, self.grid_y = grid_dim
@@ -92,7 +88,6 @@ class AvoidingArena(gym.Env):
             "default": self.default_reward,
             "on_success": self.on_success_reward,
             "on_failure": self.on_failure_reward,
-            "unchanged": self.remain_unchanged_reward
         }
 
         # obeservations
@@ -263,8 +258,6 @@ class AvoidingArena(gym.Env):
             reward, terminated = self.on_failure_reward, True
         elif (self._curr_pos == self._target_pos).all():
             reward, terminated = self.on_success_reward, True
-        elif (self._curr_pos == prev_pos).all():
-            reward, terminated = self.remain_unchanged_reward, False
 
         if self.render_mode == "human":
             self._render_frame()
