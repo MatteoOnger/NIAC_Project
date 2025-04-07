@@ -8,6 +8,7 @@ dependencies:
   - numpy
   - gym
   - pytorch
+  - tqdm
   - pip
   - pip:
     - /content/scallopy-0.2.4-cp310-cp310-manylinux_2_27_x86_64.whl
