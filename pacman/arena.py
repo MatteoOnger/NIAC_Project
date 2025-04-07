@@ -236,7 +236,8 @@ class AvoidingArena(gym.Env):
             Whether the agent reaches the terminal state (as defined under the MDP of the task)
             If true, the user needs to call the method ``reset``.
         truncated : bool
-            Whether the truncation condition outside the scope of the MDP is satisfied, typically, this is a timelimit.
+            Whether the truncation condition outside the scope of the MDP is satisfied, typically this is a timelimit,
+            in this case it depends on the maximum number of moves set.
         info : Dict[str,Any]
             Contains auxiliary diagnostic information (helpful for debugging, learning, and logging).
         """
