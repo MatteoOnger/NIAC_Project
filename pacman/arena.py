@@ -38,7 +38,7 @@ class AvoidingArena(gym.Env):
         num_enemies :int=3,
         default_reward :float=0.0,
         on_success_reward :float=1.0,
-        on_failure_reward :float=-1.0,
+        on_failure_reward :float=0.0,
         render_mode :str|None=None,
     ):
         """
