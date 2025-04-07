@@ -241,7 +241,6 @@ class AvoidingArena(gym.Env):
         info : Dict[str,Any]
             Contains auxiliary diagnostic information (helpful for debugging, learning, and logging).
         """
-        prev_pos = self._curr_pos
         direction = self.action_to_direction[action]
 
         # update agent position
