@@ -65,7 +65,7 @@ class Memory():
 
     def push(self, transition :Transition) -> None:
         """
-        Save a new transition.
+        Saves a new transition.
         If the memory is full, the oldest transaction is overwritten.
 
         Parameters
@@ -79,7 +79,7 @@ class Memory():
 
     def sample(self, batch_size :int=16) -> Transition:
         """
-        Draw randomly batch_size samples from the memory.
+        Draws randomly ``batch_size`` samples from the memory.
 
         Parameters
         ----------

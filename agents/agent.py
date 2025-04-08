@@ -108,10 +108,8 @@ class Agent():
     def __init__(
         self,
         arena :AvoidingArena,
-        num_epochs :int,
-        num_episodes :int,
-        batch_size :int,
-        memory_size :int,
+        batch_size :int=32,
+        memory_size :int=1024,
         gamma :float=0.99,
         eps_start :float=0.9,
         eps_end :float=0.05,
@@ -121,11 +119,31 @@ class Agent():
         provenance :str='difftopkproofs'
     ):
         """
+        Parameters
+        ----------
+        arena : AvoidingArena
+            Arena of the game.
+        batch_size : int, optional
+            Batch size used to train the agent, by default ``32``.
+        memory_size : int, optional
+            Capacity of the agent's memory in number of transitions, by default ``1024``
+        gamma : float, optional
+            Discount factor of the Q-learning algorithm, by default ``0.99``.
+        eps_start : float, optional
+            Starting value of epsilon, by default ``0.9``.
+            It determines the probability of choosing an action at random during training.
+        eps_end : float, optional
+            Final value of epsilon, by default ``0.05``.
+        eps_decay : float, optional
+            Controls the rate of exponential decay of epsilon, by default ``1000``.
+        lr : float, optional
+            learning rate of the optimizer, by default ``1e-4``.
+        tau : float, optional
+            update rate of the target network, by default ``5e-3``.
+        provenance : str, optional
+            Type of provenance used during execution, by default ``'difftopkproofs'``
         """
         self.arena = arena
-
-        self.num_epochs = num_epochs
-        self.num_episodes = num_episodes
 
         self.batch_size = batch_size
         self.memory_size = memory_size
@@ -159,28 +177,51 @@ class Agent():
     def select_action(self, rgb_array :torch.tensor) -> AvoidingArena.Actions:
         """
         """
+        #TODO: controlla output type
         action_scores = self.policy_net(rgb_array)
         action = torch.argmax(action_scores, dim=1)
         return action
 
 
-    def run(self) -> None:
+    def train(self, num_episodes :int, num_epochs :int) -> None:
         """
+        Trains the agent using the specified number of episodes and epochs
+
+        Parameters
+        ----------
+        num_episodes : int
+            Number of episodes per epoch.
+        num_epochs : int
+            Number of epochs.
         """
-        for i in range(1, self.num_epochs + 1):
-            self.train_epoch(i)
-            self.test_epoch(i)
+        self.training_steps_done = 0
+        for i in range(1, num_epochs + 1):
+            self.train_epoch(num_episodes, i)
+            self.test_epoch(num_episodes, i)
         return None
 
 
-    def train_epoch(self, epoch :int=0) -> None:
+    def train_epoch(self, num_episodes :int, epoch :int=0) -> None:
         """
+        Trains the agent for an epoch using the specified number of episodes.
+        
+        Parameters
+        ----------
+        num_episodes : int
+            Number of episodes.
+        epoch : int, optional
+            Epoch considered, by default ``0``.
+
+        Raises
+        ------
+        ValueError
+            If the arena's render mode is not ``'rgb_arrary'``.
         """
         if self.arena.render_mode != "rgb_array":
             LOGGER.error("invalid <arena>'s render mode, must be 'rgb_array'")
             raise ValueError("invalid <arena>'s render mode, must be 'rgb_array'")
 
-        iterator = tqdm(range(self.num_episodes))
+        iterator = tqdm(range(num_episodes))
         counter_succ, counter_upd, sum_loss = 0, 0, 0.0
 
         for i in iterator:
@@ -228,10 +269,27 @@ class Agent():
         return None
 
 
-    def test_epoch(self, epoch :int=0) -> None:
+    def test_epoch(self, num_episodes :int, epoch :int=0) -> None:
         """
+        Tests the agent for an epoch using the specified number of episodes.
+        
+        Parameters
+        ----------
+        num_episodes : int
+            Number of episodes.
+        epoch : int, optional
+            Epoch considered, by default ``0``.
+
+        Raises
+        ------
+        ValueError
+            If the arena's render mode is not ``'rgb_arrary'``.
         """
-        iterator = tqdm(range(self.num_episodes))
+        if self.arena.render_mode != "rgb_array":
+            LOGGER.error("invalid <arena>'s render mode, must be 'rgb_array'")
+            raise ValueError("invalid <arena>'s render mode, must be 'rgb_array'")
+        
+        iterator = tqdm(range(num_episodes))
         counter_succ = 0, 0
 
         for episode_i in iterator:
@@ -258,14 +316,32 @@ class Agent():
 
     def _eps_threshold(self) -> float:
         """
+        Updates epsilon according to the parameters provided 
+        during the object's Creation and the number of training steps performed.
+        
+        Returns
+        -------
+        : float
+            New value of epsilon.
         """
         eps = self.eps_end + (self.eps_start - self.eps_end) * math.exp(-1. * self.training_steps_done / self.eps_decay)
         self.training_steps_done += 1
         return eps
 
 
-    def _optimize(self):
+    def _optimize(self) -> float:
         """
+        Update the agent's policy using a batch of transitions.
+        
+        Returns
+        -------
+        : float
+            Current loss.
+        
+        Notes
+        -----
+        A number of transitions bigger than ``self.batch_size``
+        must have taken place before the agent can actually be updated.
         """
         if len(self.memory) < self.batch_size:
             LOGGER.warning("not enough transactions in memory")

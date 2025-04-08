@@ -217,7 +217,7 @@ class AvoidingArena(gym.Env):
 
     def step(self, action :int) -> Tuple[Dict[str,Any], float, bool, bool, Dict[str,Any]]:
         """
-        Run one timestep of the environment's dynamics using the agent actions.
+        Runs one timestep of the environment's dynamics using the agent actions.
         When the end of an episode is reached (``terminated or truncated``), it is necessary to call the method ``reset`` to
         reset this environment's state for the next episode.
 
