@@ -19,6 +19,33 @@ LOGGER = logging.getLogger(__name__)
 
 
 
+class CellClassifier(nn.Module):
+    """
+    """
+
+    def __init__(self):
+        super(CellClassifier, self).__init__()
+        self.network = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=8, stride=4, padding=2),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=4, stride=4, padding=1),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Dropout(p=0.5),
+            nn.Linear(in_features=512, out_features=256),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(in_features=256, out_features=4),
+            nn.Softmax(dim=1)
+        )
+        return
+
+
+    def forward(self, x):
+        return self.network(x)
+
+
+
 class PolicyNet(nn.Module):
     """
     """
@@ -31,73 +58,94 @@ class PolicyNet(nn.Module):
     ):
         """
         """
+        super(PolicyNet, self).__init__()
+
         self.arena = arena
         self.provenance = provenance
         self.edge_penality = edge_penality
+
+        self.num_cells = arena.grid_x * arena.grid_y
+        self.nodes = [(i,j) for i in range(arena.grid_x) for j in range(arena.grid_y)]
+
+        self.cell_classifier = CellClassifier()
+
+        self.path_planner = scallopy.Module(
+            program = """
+                type grid_node(x: int, y: int)
+
+                // input from neural networks
+                type agent(x: int, y: int)
+                type target(x: int, y: int)
+                type enemy(x: int, y: int)
+                
+                // safe nodes 
+                rel node(x, y) = grid_node(x, y) and not enemy(x, y)
+                
+                // basic connectivity
+                rel edge(x, y, xp, y, {self.arena.Actions.RIGHT.value}) = node(x, y) and node(xp, y) and xp == x + 1
+                rel edge(x, y, x, yp, {self.arena.Actions.UP.value})    = node(x, y) and node(x, yp) and yp == y + 1
+                rel edge(x, y, xp, y, {self.arena.Actions.LEFT.value})  = node(x, y) and node(xp, y) and xp == x - 1
+                rel edge(x, y, x, yp, {self.arena.Actions.DOWN.value})  = node(x, y) and node(x, yp) and yp == y - 1
+                
+                // path for connectivity conditioned on no enemy on the path
+                rel path(x, y, x, y) = node(x, y)
+                rel path(x, y, xp, yp) = edge(x, y, xp, yp, _)
+                rel path(x, y, xpp, ypp) = path(x, y, xp, yp) and edge(xp, yp, xpp, ypp, _)
+
+                // get the next position
+                rel next_position(xp, yp, a) = agent(x, y) and edge(x, y, xp, yp, a)
+                rel next_action(a) = next_position(x, y, a) and path(x, y, gx, gy) and target(gx, gy)
+            """,
+            provenance = self.provenance,
+            facts = {
+                "node": [(torch.tensor(1 - self.edge_penality, requires_grad=False), node) for node in self.nodes]
+            },
+            input_mappings = {
+                "agent": self.nodes,
+                "target": self.nodes,
+                "enemy": self.nodes
+            },
+            output_mappings = {
+                "next_action": list(range(4))
+            }
+        )
         return
 
 
-    def forward():
-        #TODO: ...
-        pass
-
-
-    def _logical_comp(self, agent_p :torch.Tensor, target_p :torch.Tensor, enemy_p :torch.Tensor) -> torch.Tensor:
+    def forward(self, x :torch.Tensor):
         """
         """
-        ctx = scallopy.ScallopContext(provenance=self.provenance)
+        batch_size = x.shape[0]
 
-        # create relations
-        ctx.add_relation("actor", (int, int))
-        ctx.add_relation("target", (int, int))
-        ctx.add_relation("node", (int, int))
+        cells = torch.stack(
+            [
+                torch.stack(
+                    [
+                        extract_cell(x_i, node[0], node[1], self.arena.cell_size)
+                        for node in self.nodes
+                    ]
+                )
+                for x_i in x
+            ]
+        ).reshape(batch_size * self.num_cells, 3, self.arena.cell_size, self.arena.cell_size)
 
-        # add facts to relations
-        ctx.add_facts("actor", [(agent_p[node], node) for node in self.nodes])
-        ctx.add_facts("target", [(target_p[node], node) for node in self.nodes])
-        ctx.add_facts(
-            "node",
-            [(torch.clip(1 - enemy_p[node] - self.edge_penality, min=0), node) for node in self.nodes],
-        ) # <- self.step_cost> to penalise longer walks
-
-        # rules defining edges according to valid moves
-        ctx.add_rule(f"edge(x, y, xp, y, {self.arena.Actions.RIGHT.value}) = node(x, y) and node(xp, y) and xp == x + 1")
-        ctx.add_rule(f"edge(x, y, x, yp, {self.arena.Actions.UP.value})    = node(x, y) and node(x, yp) and yp == y + 1")
-        ctx.add_rule(f"edge(x, y, xp, y, {self.arena.Actions.LEFT.value})  = node(x, y) and node(xp, y) and xp == x - 1")
-        ctx.add_rule(f"edge(x, y, x, yp, {self.arena.Actions.DOWN.value})  = node(x, y) and node(x, yp) and yp == y - 1")
-        
-        # compute paths
-        ctx.add_rule("path(x, y, x, y) = node(x, y)")
-        ctx.add_rule("path(x, y, xp, yp) = edge(x, y, xp, yp, _)")
-        ctx.add_rule("path(x, y, xpp, ypp) = path(x, y, xp, yp) and edge(xp, yp, xpp, ypp, _)")
-
-        # next moves
-        ctx.add_rule("next_position(xp, yp, a) = actor(x, y) and edge(x, y, xp, yp, a)")
-        ctx.add_rule("next_action(a) = next_position(x, y, a) and path(x, y, gx, gy) and target(gx, gy)")
-
-        ctx.run()
-
-        # get results
-        res = list(ctx.relation("next_action"))
-        actions = [self.arena.Actions(res[i][1][0]) for i in range(len(res))]
-        probs = torch.tensor([res[i][0] for i in range(len(res))])
-
-        tmp = {actions[i].name:round(float(probs[i]), 2) for i in range(len(res))}
+        features = self.cell_classifier(cells).reshape(batch_size, self.num_cells, 4)
+        agent_p = features[:, :, 0]
+        target_p =  features[:, :, 1]
+        enemy_p = features[:, :, 2]
 
         LOGGER.debug(
             f"positions:\n"
             f" - agent -> {self.nodes[torch.argmax(agent_p)]} with prob. {torch.max(agent_p)}\n"
             f" - target -> {self.nodes[torch.argmax(target_p)]} with prob. {torch.max(target_p)}\n"
-            f" - enemies -> {[node for node in self.nodes if enemy_p[node] > 0.5]} with prob. {enemy_p[enemy_p > 0.5].tolist()}"
+            f" - enemies -> {[self.nodes[i] for i in range(self.num_cells) if enemy_p[i] > 0.5]} with prob. {enemy_p[enemy_p > 0.5].tolist()}"
         )
-        LOGGER.info(f"next action: {tmp}")
-        return actions[torch.argmax(probs)]
 
+        results = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
+        next_action = torch.softmax(results["next_action"], dim=1)
 
-    def _neural_comp(self, rgb_array :np.ndarray) -> Dict[str:torch.Tensor]:
-        cells = [extract_cell(rgb_array, node[0], node[1], self.cell_size) for node in self.nodes]
-        #TODO: ...
-        pass
+        LOGGER.info(f"next action: {next_action}")
+        return next_action
 
 
 
@@ -159,15 +207,11 @@ class Agent():
 
         self.training_steps_done = 0
         self.memory = Memory(self.memory_size)
-        self.nodes = [(i,j) for i in range(self.grid_x) for j in range(self.grid_y)]
 
-        #TODO: quanto segue
-        #self.policy_net = ....
-        #self.target_net = ....
+        self.policy_net = PolicyNet(arena, provenance=provenance)
+        self.target_net = PolicyNet(arena, provenance=provenance)
         
-        #self.target_net.load_state_dict(
-        # self.policy_net.state_dict()
-        #)
+        self.target_net.load_state_dict(self.policy_net.state_dict())
 
         self.criterion = nn.SmoothL1Loss()
         self.optimizer = optim.RMSprop(self.policy_net.parameters(), self.lr)
