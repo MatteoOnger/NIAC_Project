@@ -115,7 +115,9 @@ class PolicyNet(nn.Module):
     def forward(self, x :torch.Tensor):
         """
         """
-        batch_size = x.shape[0]
+        batch_size, n_channel, *_ = x.shape
+        if n_channel != 3:
+            LOGGER.warning("<x>'s shape should be (B,C,H,W) but it does not seem channel-first")        
 
         cells = torch.stack(
             [
@@ -222,6 +224,7 @@ class Agent():
         """
         """
         #TODO: controlla output type
+        #TODO: metti normalizzazione e controlla canali
         action_scores = self.policy_net(rgb_array)
         action = torch.argmax(action_scores, dim=1)
         return action
