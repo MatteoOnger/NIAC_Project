@@ -50,7 +50,7 @@ class PolicyNet(nn.Module):
     """
     """
 
-    def __ini__(
+    def __init__(
         self,
         arena :AvoidingArena,
         provenance :str='difftopkproofs',
