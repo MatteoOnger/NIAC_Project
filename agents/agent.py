@@ -70,13 +70,13 @@ class PolicyNet(nn.Module):
         self.cell_classifier = CellClassifier()
 
         self.path_planner = scallopy.Module(
-            program = """
-                type grid_node(x: int, y: int)
+            program = f"""
+                type grid_node(x: usize, y: usize)
 
                 // input from neural networks
-                type agent(x: int, y: int)
-                type target(x: int, y: int)
-                type enemy(x: int, y: int)
+                type agent(x: usize, y: usize)
+                type target(x: usize, y: usize)
+                type enemy(x: usize, y: usize)
                 
                 // safe nodes 
                 rel node(x, y) = grid_node(x, y) and not enemy(x, y)
