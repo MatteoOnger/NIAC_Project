@@ -116,7 +116,7 @@ class PolicyNet(nn.Module):
         """
         """
         batch_size, n_channel, *_ = x.shape
-        
+
         if n_channel != 3:
             LOGGER.warning("<x>'s shape should be (B,C,H,W) but it does not seem channel-first")
         if not torch.is_floating_point(x):
@@ -139,17 +139,9 @@ class PolicyNet(nn.Module):
         target_p =  features[:, :, 1]
         enemy_p = features[:, :, 2]
 
-        LOGGER.debug(
-            f"positions:\n"
-            f" - agent -> {self.nodes[torch.argmax(agent_p)]} with prob. {torch.max(agent_p)}\n"
-            f" - target -> {self.nodes[torch.argmax(target_p)]} with prob. {torch.max(target_p)}\n"
-            f" - enemies -> {[self.nodes[i] for i in range(self.num_cells) if enemy_p[i] > 0.5]} with prob. {enemy_p[enemy_p > 0.5].tolist()}"
-        )
+        next_actions = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
+        next_action = torch.softmax(next_actions, dim=1)
 
-        results = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
-        next_action = torch.softmax(results["next_action"], dim=1)
-
-        LOGGER.info(f"next action: {next_action}")
         return next_action
 
 
