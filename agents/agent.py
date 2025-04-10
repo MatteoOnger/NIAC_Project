@@ -116,8 +116,11 @@ class PolicyNet(nn.Module):
         """
         """
         batch_size, n_channel, *_ = x.shape
+        
         if n_channel != 3:
-            LOGGER.warning("<x>'s shape should be (B,C,H,W) but it does not seem channel-first")        
+            LOGGER.warning("<x>'s shape should be (B,C,H,W) but it does not seem channel-first")
+        if not torch.is_floating_point(x):
+            LOGGER.warning("<x>'s dtype should be a float")
 
         cells = torch.stack(
             [

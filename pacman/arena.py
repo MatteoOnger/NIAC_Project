@@ -379,7 +379,7 @@ class AvoidingArena(gym.Env):
 
     def __str__(self) -> str:
         s = "┌" + ("─" * (2 * (self.grid_x + 2) - 3)) + "┐\n"
-        for y in range(self.grid_y - 1, -1, -1):
+        for y in range(self.grid_y):
             s += "│ "
             for x in range(self.grid_x):
                 pos = np.array((x,y))
