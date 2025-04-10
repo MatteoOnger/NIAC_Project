@@ -6,7 +6,7 @@ channels:
 dependencies:
   - python=3.10
   - numpy
-  - gym
+  - gym=0.26
   - pytorch
   - tqdm
   - pip
