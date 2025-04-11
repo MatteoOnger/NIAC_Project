@@ -71,6 +71,7 @@ class PolicyNet(nn.Module):
 
         self.path_planner = scallopy.Module(
             program = f"""
+                // grid nodes
                 type grid_node(x: usize, y: usize)
 
                 // input from neural networks
@@ -78,7 +79,7 @@ class PolicyNet(nn.Module):
                 type target(x: usize, y: usize)
                 type enemy(x: usize, y: usize)
                 
-                // safe nodes 
+                // safe nodes of the grid
                 rel node(x, y) = grid_node(x, y) and not enemy(x, y)
                 
                 // basic connectivity
@@ -117,10 +118,10 @@ class PolicyNet(nn.Module):
         """
         batch_size, n_channel, *_ = x.shape
 
-        if n_channel != 3 or x.ndim != 4:
-            LOGGER.warning("<x>'s shape should be (B,C,H,W)")
+        if x.ndim != 4 or n_channel != 3:
+            LOGGER.error("<x>'s shape should be (B,C,H,W)")
         if not torch.is_floating_point(x):
-            LOGGER.warning("<x>'s dtype should be a float")
+            LOGGER.error("<x>'s dtype should be a float")
 
         cells = torch.stack(
             [
@@ -138,6 +139,7 @@ class PolicyNet(nn.Module):
         agent_p = features[:, :, 0]
         target_p =  features[:, :, 1]
         enemy_p = features[:, :, 2]
+        #empty_p = features[:, :, 3]
 
         next_actions = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
         next_action = torch.softmax(next_actions, dim=1)
@@ -216,12 +218,11 @@ class Agent():
 
     def select_action(self, rgb_array :torch.Tensor|np.ndarray, preproc :bool=False) -> int:
         """
-        """
-        #TODO: controlla output type            
+        """         
+        if rgb_array.ndim == 3:
+            rgb_array = rgb_array.unsqueeze(0)
         if preproc:
             rgb_array = image_to_torch(rgb_array)
-        if rgb_array.ndim == 3:
-            rgb_array.unsqueeze_(0)
 
         action_scores = self.policy_net(rgb_array)
         action = torch.argmax(action_scores, dim=1)
@@ -256,15 +257,9 @@ class Agent():
             Number of episodes.
         epoch : int, optional
             Epoch considered, by default ``0``.
-
-        Raises
-        ------
-        ValueError
-            If the arena's render mode is not ``'rgb_arrary'``.
         """
         if self.arena.render_mode != "rgb_array":
-            LOGGER.error("invalid <arena>'s render mode, must be 'rgb_array'")
-            raise ValueError("invalid <arena>'s render mode, must be 'rgb_array'")
+            LOGGER.warning("<arena>'s render mode should be 'rgb_array'")
 
         iterator = tqdm.tqdm(range(num_episodes))
         counter_succ, counter_upd, sum_loss = 0, 0, 0.0
@@ -290,7 +285,7 @@ class Agent():
                 self.memory.push(transition)
                 
                 # update policy network's weights
-                loss = self._optimize()
+                loss = self._optimize() if len(self.memory) >= self.batch_size else 0.0
 
                 # soft update of the target network's weights θ′ ← τ θ + (1 − τ) θ′
                 target_net_state_dict = self.target_net.state_dict()
@@ -324,22 +319,16 @@ class Agent():
             Number of episodes.
         epoch : int, optional
             Epoch considered, by default ``0``.
-
-        Raises
-        ------
-        ValueError
-            If the arena's render mode is not ``'rgb_arrary'``.
         """
         if self.arena.render_mode != "rgb_array":
-            LOGGER.error("invalid <arena>'s render mode, must be 'rgb_array'")
-            raise ValueError("invalid <arena>'s render mode, must be 'rgb_array'")
+            LOGGER.warning("<arena>'s render mode should be 'rgb_array'")
         
-        iterator = tqdm(range(num_episodes))
-        counter_succ = 0, 0
+        iterator = tqdm.tqdm(range(num_episodes))
+        counter_succ = 0
 
         for episode_i in iterator:
             _ = self.arena.reset()
-            state_image = Agent._img_to_torch(self.arena.render())
+            state_image = image_to_torch(self.arena.render())
 
             done = False
             while not done:
@@ -348,7 +337,7 @@ class Agent():
                 _, reward, terminated, truncated, _ = self.arena.step(action)
             
                 done = terminated or truncated
-                state_image = Agent._img_to_torch(self.arena.render())
+                state_image = image_to_torch(self.arena.render())
 
                 # update counter
                 counter_succ += 1 if done and reward > 0 else 0
@@ -405,7 +394,9 @@ class Agent():
         reward_batch = torch.tensor(batch.reward)
 
         # compute Q(s_t, a) for the action taken
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch.unsqueeze(1))
+        state_action_values = self.policy_net(
+            state_batch
+        ).gather(1, action_batch.unsqueeze(1)).squeeze(1)
         
         # compute V(s_{t+1}) for all the next states
         next_state_values = torch.zeros(self.batch_size)
