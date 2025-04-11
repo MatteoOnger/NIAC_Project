@@ -117,8 +117,8 @@ class PolicyNet(nn.Module):
         """
         batch_size, n_channel, *_ = x.shape
 
-        if n_channel != 3:
-            LOGGER.warning("<x>'s shape should be (B,C,H,W) but it does not seem channel-first")
+        if n_channel != 3 or x.ndim != 4:
+            LOGGER.warning("<x>'s shape should be (B,C,H,W)")
         if not torch.is_floating_point(x):
             LOGGER.warning("<x>'s dtype should be a float")
 
@@ -221,11 +221,11 @@ class Agent():
         if preproc:
             rgb_array = image_to_torch(rgb_array)
         if rgb_array.ndim == 3:
-            rgb_array = torch.unsqueeze(rgb_array, 0)
+            rgb_array.unsqueeze_(0)
 
         action_scores = self.policy_net(rgb_array)
         action = torch.argmax(action_scores, dim=1)
-        return action
+        return int(action)
 
 
     def train(self, num_episodes :int, num_epochs :int) -> None:
@@ -277,7 +277,7 @@ class Agent():
             while not done:
                 # select next action
                 if random.random() < self._eps_threshold():
-                    action = torch.tensor([self.arena.action_space.sample()])
+                    action = self.arena.action_space.sample()
                 else:
                     action = self.select_action(curr_state_image)
                 
@@ -397,15 +397,15 @@ class Agent():
         # from batch-array of transitions to transition of batch-arrays
         batch = Transition(*zip(*transitions))
 
-        non_final_mask = torch.tensor([not tr.done for tr in batch], dtype=torch.bool)
-        non_final_next_states = torch.cat([ns for ns in batch.next_state if ns is not None])
+        non_final_mask = torch.tensor(batch.done, dtype=torch.bool).logical_not()
+        non_final_next_states = torch.stack([ns for ns in batch.next_state if ns is not None])
 
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
+        state_batch = torch.stack(batch.state)
+        action_batch = torch.tensor(batch.action)
+        reward_batch = torch.tensor(batch.reward)
 
         # compute Q(s_t, a) for the action taken
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch.unsqueeze(1))
         
         # compute V(s_{t+1}) for all the next states
         next_state_values = torch.zeros(self.batch_size)
