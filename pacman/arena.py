@@ -215,7 +215,7 @@ class AvoidingArena(gym.Env):
         return (self._get_obs(), self._get_info())
 
 
-    def step(self, action :int) -> Tuple[Dict[str,Any], float, bool, bool, Dict[str,Any]]:
+    def step(self, action :int|Actions) -> Tuple[Dict[str,Any], float, bool, bool, Dict[str,Any]]:
         """
         Runs one timestep of the environment's dynamics using the agent actions.
         When the end of an episode is reached (``terminated or truncated``), it is necessary to call the method ``reset`` to
@@ -223,7 +223,7 @@ class AvoidingArena(gym.Env):
 
         Parameters
         ----------
-        action : int
+        action : int | Actions
             An action provided by the agent to update the environment state.
 
         Returns
@@ -241,6 +241,9 @@ class AvoidingArena(gym.Env):
         info : Dict[str,Any]
             Contains auxiliary diagnostic information (helpful for debugging, learning, and logging).
         """
+        if isinstance(action, AvoidingArena.Actions):
+            action = action.value
+
         direction = self.action_to_direction[action]
 
         # update agent position

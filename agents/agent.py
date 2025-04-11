@@ -11,7 +11,7 @@ import tqdm
 from typing import *
 
 from ..pacman.arena import AvoidingArena
-from .utils import extract_cell, Memory, Transition
+from .utils import extract_cell, image_to_torch, Memory, Transition
 
 
 
@@ -141,7 +141,6 @@ class PolicyNet(nn.Module):
 
         next_actions = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
         next_action = torch.softmax(next_actions, dim=1)
-
         return next_action
 
 
@@ -215,11 +214,13 @@ class Agent():
         return
 
 
-    def select_action(self, rgb_array :torch.tensor) -> AvoidingArena.Actions:
+    def select_action(self, rgb_array :torch.tensor|np.ndarray, preproc :bool=False) -> int:
         """
         """
         #TODO: controlla output type
-        #TODO: metti normalizzazione e controlla canali
+        if preproc:
+            rgb_array = image_to_torch(rgb_array)
+
         action_scores = self.policy_net(rgb_array)
         action = torch.argmax(action_scores, dim=1)
         return action
@@ -263,25 +264,25 @@ class Agent():
             LOGGER.error("invalid <arena>'s render mode, must be 'rgb_array'")
             raise ValueError("invalid <arena>'s render mode, must be 'rgb_array'")
 
-        iterator = tqdm(range(num_episodes))
+        iterator = tqdm.tqdm(range(num_episodes))
         counter_succ, counter_upd, sum_loss = 0, 0, 0.0
 
         for i in iterator:
             _ = self.arena.reset()
-            curr_state_image = torch.tensor(self.arena.render())
+            curr_state_image = image_to_torch(self.arena.render())
 
             done = False
             while not done:
                 # select next action
-                if random.rand() < self._eps_threshold():
+                if random.random() < self._eps_threshold():
                     action = torch.tensor([self.arena.action_space.sample()])
                 else:
                     action = self.select_action(curr_state_image)
                 
-                _, reward, terminated, truncated, _ = self.arena.step(action)
+                _, reward, terminated, truncated, _ = self.arena.step(int(action))
                 
                 done = terminated or truncated
-                next_state_image = None if done else self.arena.render()
+                next_state_image = None if done else image_to_torch(self.arena.render())
                 
                 transition = Transition(curr_state_image, action, reward, done, next_state_image)
                 self.memory.push(transition)
@@ -289,7 +290,7 @@ class Agent():
                 # update policy network's weights
                 loss = self._optimize()
 
-                # soft update of the target network's weights θ′ ← τ θ + (1 −τ )θ′
+                # soft update of the target network's weights θ′ ← τ θ + (1 − τ) θ′
                 target_net_state_dict = self.target_net.state_dict()
                 policy_net_state_dict = self.policy_net.state_dict()
                 for key in policy_net_state_dict:
@@ -336,7 +337,7 @@ class Agent():
 
         for episode_i in iterator:
             _ = self.arena.reset()
-            state_image = torch.tensor(self.arena.render())
+            state_image = Agent._img_to_torch(self.arena.render())
 
             done = False
             while not done:
@@ -345,7 +346,7 @@ class Agent():
                 _, reward, terminated, truncated, _ = self.arena.step(action)
             
                 done = terminated or truncated
-                state_image = torch.tensor(self.arena.render())
+                state_image = Agent._img_to_torch(self.arena.render())
 
                 # update counter
                 counter_succ += 1 if done and reward > 0 else 0
@@ -387,7 +388,7 @@ class Agent():
         """
         if len(self.memory) < self.batch_size:
             LOGGER.warning("not enough transactions in memory")
-            return None
+            return 0.0
         
         # draw random transitions
         transitions = self.memory.sample(self.batch_size)

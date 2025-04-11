@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import torch
 
 from collections import namedtuple, deque
 from typing import *
@@ -48,7 +49,6 @@ def channel_l2f(rgb_arr :np.ndarray) -> np.ndarray:
     return np.moveaxis(rgb_arr, -1, dest)
 
 
-
 def extract_cell(rgb_arr :np.ndarray, x :int, y :int, cell_size_x :int, cell_size_y :int|None=None) -> np.ndarray:
     """
     Extracts a specific cell from a given RGB image array.
@@ -84,6 +84,39 @@ def extract_cell(rgb_arr :np.ndarray, x :int, y :int, cell_size_x :int, cell_siz
     cell_img = rgb_arr[:, y*cell_size_y:(y+1)*cell_size_y, x*cell_size_x:(x+1)*cell_size_x]
     return cell_img
 
+
+def image_to_torch(rgb_array :np.ndarray) -> torch.Tensor:
+    """
+    Convert an RGB image or batch of images from NumPy array to a normalized PyTorch tensor.
+
+    This function performs two transformations on the input image(s):
+    1. Reorders the channel axis from the last position to the first (channels-first format).
+       - For a single image: from (H, W, C) to (C, H, W)
+       - For a batch of images: from (N, H, W, C) to (N, C, H, W)
+    2. Normalizes the pixel values from [0, 255] to [0.0, 1.0] and converts to a float32 PyTorch tensor.
+
+    Parameters
+    ----------
+    rgb_array : np.ndarray
+        A NumPy array representing an RGB image or a batch of images.
+        - If 3D: shape is (H, W, C)
+        - If 4D: shape is (N, H, W, C)
+        Expected to have dtype uint8 and values in the range [0, 255].
+
+    Returns
+    -------
+    :torch.Tensor
+        A float32 PyTorch tensor with:
+        - Shape (C, H, W) if input is 3D
+        - Shape (N, C, H, W) if input is 4D
+        Values are in the range [0.0, 1.0].
+
+    Raises
+    ------
+    NotImplementedError
+        If the input array is not 3D or 4D.
+    """
+    return torch.tensor(normalize_img(channel_l2f(rgb_array)))
 
 
 def normalize_img(rgb_arr :np.ndarray) -> np.ndarray:
