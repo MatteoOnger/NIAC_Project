@@ -48,6 +48,9 @@ class CellClassifier(nn.Module):
 
 class PolicyNet(nn.Module):
     """
+    This class implements the agent's policy network.
+    It consists of a neural component for feature extraction and 
+    a logical part that maps the features to actions.
     """
 
     def __init__(
@@ -57,6 +60,15 @@ class PolicyNet(nn.Module):
         edge_penality :float=0.1
     ):
         """
+        Parameters
+        ----------
+        arena : AvoidingArena
+            Arena of the game.
+        provenance : str, optional
+            Type of provenance used during execution, by default ``'difftopkproofs'``.
+        edge_penality : float, optional
+            Factor used to penalize longer paths that lead the agent to the target.
+            It must have a value between ``[0, 1]``.
         """
         super(PolicyNet, self).__init__()
 
@@ -67,8 +79,10 @@ class PolicyNet(nn.Module):
         self.num_cells = arena.grid_x * arena.grid_y
         self.nodes = [(i,j) for i in range(arena.grid_x) for j in range(arena.grid_y)]
 
+        # neural component
         self.cell_classifier = CellClassifier()
 
+        # logical component
         self.path_planner = scallopy.Module(
             program = f"""
                 // grid nodes
@@ -113,8 +127,26 @@ class PolicyNet(nn.Module):
         return
 
 
-    def forward(self, x :torch.Tensor):
+    def forward(self, x :torch.Tensor) -> torch.Tensor:
         """
+        Process input observations and predict the next action probabilities.
+
+        Given a batch of RGB images representing the environment, this method extracts
+        spatial features from predefined cells, classifies cell content, and uses a 
+        path planning module to predict the agent's next action.
+
+        Parameters
+        ----------
+        x : torch.Tensor of shape (B, C, H, W)
+            A 4D tensor where B is the batch size, C must be 3 (RGB channels) and
+            H and W are the height and width of the input images.
+            The tensor must have a floating point data type.
+
+        Returns
+        -------
+        : torch.Tensor of shape (B, A)
+            A 2D tensor where A is the number of possible actions.
+            Each row contains the softmax-normalized probabilities for the next action.
         """
         batch_size, n_channel, *_ = x.shape
 
@@ -123,6 +155,7 @@ class PolicyNet(nn.Module):
         if not torch.is_floating_point(x):
             LOGGER.error("<x>'s dtype should be a float")
 
+        # split the grids into cells
         cells = torch.stack(
             [
                 torch.stack(
@@ -135,20 +168,24 @@ class PolicyNet(nn.Module):
             ]
         ).reshape(batch_size * self.num_cells, 3, self.arena.cell_size, self.arena.cell_size)
 
+        # extract features
         features = self.cell_classifier(cells).reshape(batch_size, self.num_cells, 4)
         agent_p = features[:, :, 0]
         target_p =  features[:, :, 1]
         enemy_p = features[:, :, 2]
         #empty_p = features[:, :, 3]
 
+        # predict next action probabilities
         next_actions = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
         next_action = torch.softmax(next_actions, dim=1)
         return next_action
 
 
 
-class Agent():
+class DQNAgent():
     """
+    Agent, based on Deep Q-Network, that uses an 
+    epsilon-greedy policy to solve the Pacaman Maze game.
     """
 
     def __init__(
@@ -172,7 +209,7 @@ class Agent():
         batch_size : int, optional
             Batch size used to train the agent, by default ``32``.
         memory_size : int, optional
-            Capacity of the agent's memory in number of transitions, by default ``1024``
+            Capacity of the agent's memory in number of transitions, by default ``1024``.
         gamma : float, optional
             Discount factor of the Q-learning algorithm, by default ``0.99``.
         eps_start : float, optional
@@ -183,24 +220,21 @@ class Agent():
         eps_decay : float, optional
             Controls the rate of exponential decay of epsilon, by default ``1000``.
         lr : float, optional
-            learning rate of the optimizer, by default ``1e-4``.
+            Learning rate of the optimizer, by default ``1e-4``.
         tau : float, optional
-            update rate of the target network, by default ``5e-3``.
+            Update rate of the target network, by default ``5e-3``.
         provenance : str, optional
-            Type of provenance used during execution, by default ``'difftopkproofs'``
+            Type of provenance used during execution, by default ``'difftopkproofs'``.
         """
         self.arena = arena
-
         self.batch_size = batch_size
         self.memory_size = memory_size
-
         self.gamma = gamma
         self.eps_start = eps_start
         self.eps_end = eps_end
         self.eps_decay = eps_decay
         self.lr = lr
         self.tau = tau
-
         self.provenance = provenance
 
         self.training_steps_done = 0
@@ -208,7 +242,6 @@ class Agent():
 
         self.policy_net = PolicyNet(arena, provenance=provenance)
         self.target_net = PolicyNet(arena, provenance=provenance)
-        
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
         self.criterion = nn.SmoothL1Loss()
@@ -216,14 +249,32 @@ class Agent():
         return
 
 
-    def select_action(self, rgb_array :torch.Tensor|np.ndarray, preproc :bool=False) -> int:
+    def select_action(self, rgb_array :torch.Tensor|np.ndarray) -> int:
         """
-        """         
+        Select an action based on the input image using the policy network.
+
+        Parameters
+        ----------
+        rgb_array : torch.Tensor | np.ndarray
+            Input image represented as a torch tensor with shape (C, H, W) 
+            and values in the range [0., 1.] or as a NumPy array with shape (H, W, C)
+            and values in the range [0, 255].
+
+        Returns
+        -------
+        : int
+            The index of the action selected by the policy network.
+
+        Notes
+        -----
+        - If the input is a NumPy array, the function `image_to_torch` is used to 
+        convert NumPy array to the expected torch tensor format.
+        """  
+        if isinstance(rgb_array, np.ndarray):
+            rgb_array = image_to_torch(rgb_array)
         if rgb_array.ndim == 3:
             rgb_array = rgb_array.unsqueeze(0)
-        if preproc:
-            rgb_array = image_to_torch(rgb_array)
-
+        
         action_scores = self.policy_net(rgb_array)
         action = torch.argmax(action_scores, dim=1)
         return int(action)
@@ -231,7 +282,7 @@ class Agent():
 
     def train(self, num_episodes :int, num_epochs :int) -> None:
         """
-        Trains the agent using the specified number of episodes and epochs
+        Train the agent using the specified number of episodes and epochs.
 
         Parameters
         ----------
@@ -249,7 +300,7 @@ class Agent():
 
     def train_epoch(self, num_episodes :int, epoch :int=0) -> None:
         """
-        Trains the agent for an epoch using the specified number of episodes.
+        Train the agent for an epoch using the specified number of episodes.
         
         Parameters
         ----------
@@ -270,17 +321,19 @@ class Agent():
 
             done = False
             while not done:
-                # select next action
+                # select next action using ε-greedy policy
                 if random.random() < self._eps_threshold():
                     action = self.arena.action_space.sample()
                 else:
                     action = self.select_action(curr_state_image)
                 
+                # perform selected action
                 _, reward, terminated, truncated, _ = self.arena.step(int(action))
                 
                 done = terminated or truncated
                 next_state_image = None if done else image_to_torch(self.arena.render())
                 
+                # save transition
                 transition = Transition(curr_state_image, action, reward, done, next_state_image)
                 self.memory.push(transition)
                 
@@ -311,7 +364,7 @@ class Agent():
 
     def test_epoch(self, num_episodes :int, epoch :int=0) -> None:
         """
-        Tests the agent for an epoch using the specified number of episodes.
+        Test the agent for an epoch using the specified number of episodes.
         
         Parameters
         ----------
@@ -332,7 +385,7 @@ class Agent():
 
             done = False
             while not done:
-                # select next action
+                # select and perform the next action using the policy network
                 action = self.select_action(state_image)
                 _, reward, terminated, truncated, _ = self.arena.step(action)
             
@@ -350,8 +403,8 @@ class Agent():
 
     def _eps_threshold(self) -> float:
         """
-        Updates epsilon according to the parameters provided 
-        during the object's Creation and the number of training steps performed.
+        Update epsilon according to the parameters provided during
+        the object's creation and the number of training steps performed.
         
         Returns
         -------
@@ -374,8 +427,8 @@ class Agent():
         
         Notes
         -----
-        A number of transitions bigger than ``self.batch_size``
-        must have taken place before the agent can actually be updated.
+        - A number of transitions bigger than ``self.batch_size`` must have
+        taken place before the agent can actually be updated.
         """
         if len(self.memory) < self.batch_size:
             LOGGER.warning("not enough transactions in memory")
@@ -402,7 +455,7 @@ class Agent():
         next_state_values = torch.zeros(self.batch_size)
         with torch.no_grad():
             next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1).values
-        # compute the expected Q values
+        # compute the expected Q(s_t, a)
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
         # compute the loss
