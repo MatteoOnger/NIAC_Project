@@ -214,12 +214,14 @@ class Agent():
         return
 
 
-    def select_action(self, rgb_array :torch.tensor|np.ndarray, preproc :bool=False) -> int:
+    def select_action(self, rgb_array :torch.Tensor|np.ndarray, preproc :bool=False) -> int:
         """
         """
-        #TODO: controlla output type
+        #TODO: controlla output type            
         if preproc:
             rgb_array = image_to_torch(rgb_array)
+        if rgb_array.ndim == 3:
+            rgb_array = torch.unsqueeze(rgb_array, 0)
 
         action_scores = self.policy_net(rgb_array)
         action = torch.argmax(action_scores, dim=1)
