@@ -68,7 +68,7 @@ class PolicyNet(nn.Module):
             Type of provenance used during execution, by default ``'difftopkproofs'``.
         edge_penality : float, optional
             Factor used to penalize longer paths that lead the agent to the target.
-            It must have a value between ``[0, 1]``.
+            It must have a value between [0.0, 1.0], by default ``0.1``.
         """
         super(PolicyNet, self).__init__()
 
@@ -257,7 +257,7 @@ class DQNAgent():
         ----------
         rgb_array : torch.Tensor | np.ndarray
             Input image represented as a torch tensor with shape (C, H, W) 
-            and values in the range [0., 1.] or as a NumPy array with shape (H, W, C)
+            and values in the range [0.0, 1.0] or as a NumPy array with shape (H, W, C)
             and values in the range [0, 255].
 
         Returns
@@ -272,9 +272,10 @@ class DQNAgent():
         """  
         if isinstance(rgb_array, np.ndarray):
             rgb_array = image_to_torch(rgb_array)
-        if rgb_array.ndim == 3:
-            rgb_array = rgb_array.unsqueeze(0)
         
+        # add batch dimension
+        rgb_array = rgb_array.unsqueeze(0)
+
         action_scores = self.policy_net(rgb_array)
         action = torch.argmax(action_scores, dim=1)
         return int(action)
@@ -463,8 +464,7 @@ class DQNAgent():
 
         # optimize the model
         self.optimizer.zero_grad()
-        loss.backward(retain_graph=True)
-        for param in self.policy_net.parameters():
-            param.grad.data.clamp_(-1, 1)
+        loss.backward()
+        nn.utils.clip_grad_value_(self.policy_net.parameters(), 1000)
         self.optimizer.step()
         return loss.detach()

@@ -24,6 +24,9 @@ class AvoidingArena(gym.Env):
 
 
     class Actions(Enum):
+        """
+        Enum of permitted moves.
+        """
         RIGHT = 0
         UP = 1
         LEFT = 2
@@ -44,7 +47,7 @@ class AvoidingArena(gym.Env):
         """
         Parameters
         ----------
-        cell_size : float, optional
+        cell_size : int, optional
             The side length of each cell in pixels, by default ``64``.
         grid_dim : Tuple[int, int], optional
             A tuple of two integers for ``(grid_x, grid_y)``, by default ``(5, 5)``.
@@ -57,7 +60,7 @@ class AvoidingArena(gym.Env):
         on_success_reward : float, optional
             Target status reward, by default ``1.0``.
         on_failure_reward : float, optional
-            Reward if hit by an enemy, by default ``-1.0``.
+            Reward if hit by an enemy, by default ``0.0``.
         render_mode : str | None, optional
             Render mode to help visualise what the agent sees, by default ``None``.
 
@@ -66,12 +69,12 @@ class AvoidingArena(gym.Env):
         ValueError
             - If the number of enemies is greater than the number of cells minus two
             (one cell for the start state and one for the goal state).
-            - If the renderning mode is invalid.
+            - If the rendering mode is invalid.
         """
         if num_enemies > (grid_dim[0] * grid_dim[1] - 2):
-            raise ValueError("Too many enemies")
+            raise ValueError("too many enemies")
         if (render_mode is not None) and (render_mode not in self.metadata["render_modes"]):
-            raise ValueError("Render mode must be `None` or in `metadata['render_modes']`")
+            raise ValueError("render mode must be `None` or in `metadata['render_modes']`")
 
         self.cell_size = cell_size
         self.grid_dim = np.array(grid_dim)
@@ -131,9 +134,14 @@ class AvoidingArena(gym.Env):
 
     def close(self) -> None:
         """
-        After the user has finished using the environment, close contains the code necessary to clean up the environment.
+        After the user has finished using the environment, ``close`` contains the code necessary to clean up the environment.
         This is critical for closing rendering windows, database or HTTP connections.
         Calling ``close`` on an already closed environment has no effect and won't raise an error.
+
+        Raises
+        ------
+        ImportError
+            - If Pygame is not installed.
         """
         if self._window_surface is not None and self.render_mode in {"human", "rgb_array"}:
             try:
@@ -148,7 +156,7 @@ class AvoidingArena(gym.Env):
 
     def render(self) -> np.ndarray|None:
         """
-        Computes the render frames as specified by the attribute ``render_mode`` during the initialization of the environment.
+        Compute the render frames as specified by the attribute ``render_mode`` during the initialization of the environment.
 
         Returns
         -------
@@ -166,7 +174,7 @@ class AvoidingArena(gym.Env):
 
     def reset(self, seed :int|None=None, options :Dict[str,Any]|None=None) -> Tuple[Dict[str,Any], Dict[str,Any]]:
         """
-        Resets the environment to an initial internal state.
+        Reset the environment to an initial internal state.
 
         Parameters
         ----------
@@ -180,11 +188,11 @@ class AvoidingArena(gym.Env):
             If you pass an integer, the PRNG will be reset even if it already exists.
             Usually, you want to pass an integer right after the environment has been initialized and then never again.
         options : Dict[str, Any] | None, optional
-            This parameter is ignored, present here for consistency, by default ``None``.
+            This parameter is ignored, present here only for consistency, by default ``None``.
 
         Returns
         -------
-        :Tuple[Dict[str, Any], Dict[str, Any]]
+        : Tuple[Dict[str, Any], Dict[str, Any]]
             Observation of the initial state and auxiliary infomration.
         """
         super().reset(seed=seed)
@@ -206,7 +214,7 @@ class AvoidingArena(gym.Env):
         self._target_pos = empty_pos[idx]
         del empty_pos[idx]
 
-        # generate enemy positions
+        # generate enemies positions
         idxs = self.np_random.choice(len(empty_pos), size=self.num_enemies, replace=False)
         self._enemies_pos = np.array([empty_pos[idx] for idx in idxs])
 
@@ -217,7 +225,7 @@ class AvoidingArena(gym.Env):
 
     def step(self, action :int|Actions) -> Tuple[Dict[str,Any], float, bool, bool, Dict[str,Any]]:
         """
-        Runs one timestep of the environment's dynamics using the agent actions.
+        Run one timestep of the environment's dynamics using the agent action.
         When the end of an episode is reached (``terminated or truncated``), it is necessary to call the method ``reset`` to
         reset this environment's state for the next episode.
 
@@ -269,11 +277,11 @@ class AvoidingArena(gym.Env):
 
     def _get_info(self) -> Dict[str,Any]:
         """
-        Returns auxiliary infomration.
+        Return auxiliary infomration.
 
         Returns
         -------
-        :Dict[str, Any]
+        : Dict[str, Any]
             Auxiliary infomration.
         """
         return {"manhattan_distance": np.linalg.norm(self._curr_pos - self._target_pos, ord=1), "moves_counter": self._moves_counter}
@@ -281,11 +289,11 @@ class AvoidingArena(gym.Env):
 
     def _get_obs(self) -> Dict[str,Any]:
         """
-        Returns observation.
+        Return observation.
 
         Returns
         -------
-        :Dict[str, Any]
+        : Dict[str, Any]
             Observation.
         """
         return {"start": self._start_pos, "agent": self._curr_pos, "target": self._target_pos, "enemies": self._enemies_pos}
@@ -293,7 +301,7 @@ class AvoidingArena(gym.Env):
 
     def _render_frame(self) -> np.ndarray|None:
         """
-        Computes the render frames.
+        Compute the render frames.
 
         Returns
         -------
