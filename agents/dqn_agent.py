@@ -4,8 +4,6 @@ import numpy as np
 import random
 import scallopy
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import tqdm
 
 from typing import *
@@ -19,34 +17,105 @@ LOGGER = logging.getLogger(__name__)
 
 
 
-class CellClassifier(nn.Module):
+class CellClassifier(torch.nn.Module):
     """
+    A convolutional neural network for cell image classification with optional Bayesian dropout.
+
+    This model includes convolutional layers followed by fully connected layers and
+    uses dropout to enable Monte Carlo (MC) sampling for Bayesian inference.
     """
 
-    def __init__(self):
+    def __init__(self, bayesian :bool=False):
         super(CellClassifier, self).__init__()
-        self.network = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=8, stride=4, padding=2),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=4, stride=4, padding=1),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Dropout(p=0.5),
-            nn.Linear(in_features=512, out_features=256),
-            nn.ReLU(),
-            nn.Dropout(p=0.5),
-            nn.Linear(in_features=256, out_features=4),
-            nn.Softmax(dim=1)
-        )
+        self.bayesian = bayesian
+
+        self.c2d_1 = torch.nn.Conv2d(in_channels=3, out_channels=16, kernel_size=8, stride=4, padding=2)
+        self.c2d_2 = torch.nn.Conv2d(in_channels=16, out_channels=32, kernel_size=4, stride=4, padding=1)
+
+        self.fc_1 = torch.nn.Linear(in_features=512, out_features=256)
+        self.fc_2 = torch.nn.Linear(in_features=256, out_features=4)
+
+        self.dropout = torch.nn.Dropout(p=0.5)
+        self.flatten = torch.nn.Flatten()
+        self.relu = torch.nn.ReLU()
+        self.softmax = torch.nn.Softmax(dim=1)
         return
 
 
-    def forward(self, x):
-        return self.network(x)
+    def forward(self, x :torch.Tensor) -> torch.Tensor:
+        """
+        Perform a forward pass through the network.
+
+        If Bayesian mode is enabled, dropout is applied in training mode even during inference.
+
+        Parameters
+        ----------
+        x : torch.Tensor of shape (batch_size, 3, H, W)
+            Input tensor, where H and W are height and width of input images, i.e. cells.
+
+        Returns
+        -------
+        : torch.Tensor of shape (batch_size, 4)
+            Output tensor representing class probabilities.
+        """
+        if self.bayesian:
+            self.dropout.train()
+        
+        x = self.c2d_1(x)
+        x = self.relu(x)
+
+        x = self.c2d_2(x)
+        x = self.relu(x)
+
+        x = self.flatten(x)
+
+        x = self.dropout(x)
+        x = self.fc_1(x)
+        x = self.relu(x)
+
+        x = self.dropout(x)
+        x = self.fc_2(x)
+        x = self.softmax(x)
+        return x
+
+
+    def mc_forward(self, x: torch.Tensor, n_samples :int=10) -> torch.Tensor:
+        """
+        Perform a forward pass with Monte Carlo dropout.
+
+        This method applies the forward pass multiple times with dropout enabled to approximate
+        a posterior distribution over the predictions.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, 3, H, W), where H and W are height and width of input images.
+        n_samples : int, optional
+            Number of Monte Carlo samples to draw, by default is ``10``.
+
+        Returns
+        -------
+        mean : torch.Tensor of shape (batch_size, 4)
+            Mean predicted class probabilities.
+        std : torch.Tensor of shape (batch_size, 4)
+            Standard deviation of the predicted class probabilities.
+        """
+        prev_state = self.training
+        self.train(False)
+
+        if not self.bayesian:
+            LOGGER.warning("calling Monte Carlo forward method with <self.bayesian> set to False")
+
+        # predictions of shape (n_samples, batch, 4)        
+        preds = torch.stack([self.forward(x) for _ in range(n_samples)])
+        mean, std = preds.mean(axis=0), preds.std(axis=0)
+
+        self.train(prev_state)
+        return mean, std
 
 
 
-class PolicyNet(nn.Module):
+class PolicyNet(torch.nn.Module):
     """
     This class implements the agent's policy network.
     It consists of a neural component for feature extraction and 
@@ -56,6 +125,8 @@ class PolicyNet(nn.Module):
     def __init__(
         self,
         arena :AvoidingArena,
+        bayesian :bool=False,
+        n_samples :int=1,
         provenance :str='difftopkproofs',
         edge_penality :float=0.1
     ):
@@ -64,6 +135,11 @@ class PolicyNet(nn.Module):
         ----------
         arena : AvoidingArena
             Arena of the game.
+        bayesian : bool, optional
+            Whether to use a Bayesian cell classifier, by default ``False``.
+        n_samples : int, optional
+            Number of samples used in Bayesian inference, by default ``1``.
+            This parameter is ignored if ``bayesain=False``.
         provenance : str, optional
             Type of provenance used during execution, by default ``'difftopkproofs'``.
         edge_penality : float, optional
@@ -73,6 +149,8 @@ class PolicyNet(nn.Module):
         super(PolicyNet, self).__init__()
 
         self.arena = arena
+        self.bayesian = bayesian
+        self.n_samples = n_samples
         self.provenance = provenance
         self.edge_penality = edge_penality
 
@@ -80,7 +158,7 @@ class PolicyNet(nn.Module):
         self.nodes = [(i,j) for i in range(arena.grid_x) for j in range(arena.grid_y)]
 
         # neural component
-        self.cell_classifier = CellClassifier()
+        self.cell_classifier = CellClassifier(self.bayesian)
 
         # logical component
         self.path_planner = scallopy.Module(
@@ -169,7 +247,11 @@ class PolicyNet(nn.Module):
         ).reshape(batch_size * self.num_cells, 3, self.arena.cell_size, self.arena.cell_size)
 
         # extract features
-        features = self.cell_classifier(cells).reshape(batch_size, self.num_cells, 4)
+        if self.bayesian:
+            mean, _ = self.cell_classifier.mc_forward(cells, self.n_samples)
+            features = mean.reshape(batch_size, self.num_cells, 4)
+        else:
+            features = self.cell_classifier.forward(cells).reshape(batch_size, self.num_cells, 4)
         agent_p = features[:, :, 0]
         target_p =  features[:, :, 1]
         enemy_p = features[:, :, 2]
@@ -199,6 +281,8 @@ class DQNAgent():
         eps_decay :float=1000,
         lr :float=1e-4,
         tau :float=5e-3,
+        bayesian_net :bool=False,
+        n_samples :int=1,
         provenance :str='difftopkproofs'
     ):
         """
@@ -223,6 +307,11 @@ class DQNAgent():
             Learning rate of the optimizer, by default ``1e-4``.
         tau : float, optional
             Update rate of the target network, by default ``5e-3``.
+        bayesian : bool, optional
+            Whether to use a Bayesian cell classifier, by default ``False``.
+        n_samples : int, optional
+            Number of samples used in Bayesian inference, by default ``1``.
+            This parameter is ignored if ``bayesain=False``.
         provenance : str, optional
             Type of provenance used during execution, by default ``'difftopkproofs'``.
         """
@@ -235,17 +324,19 @@ class DQNAgent():
         self.eps_decay = eps_decay
         self.lr = lr
         self.tau = tau
+        self.bayesian_net = bayesian_net
+        self.n_samples = n_samples
         self.provenance = provenance
 
         self.training_steps_done = 0
         self.memory = Memory(self.memory_size)
 
-        self.policy_net = PolicyNet(arena, provenance=provenance)
-        self.target_net = PolicyNet(arena, provenance=provenance)
+        self.policy_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
+        self.target_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
-        self.criterion = nn.SmoothL1Loss()
-        self.optimizer = optim.RMSprop(self.policy_net.parameters(), self.lr)
+        self.criterion = torch.nn.SmoothL1Loss()
+        self.optimizer = torch.optim.RMSprop(self.policy_net.parameters(), self.lr)
         return
 
 
@@ -465,6 +556,6 @@ class DQNAgent():
         # optimize the model
         self.optimizer.zero_grad()
         loss.backward()
-        nn.utils.clip_grad_value_(self.policy_net.parameters(), 1000)
+        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 1000)
         self.optimizer.step()
         return loss.detach()
