@@ -125,6 +125,8 @@ class PolicyNet(torch.nn.Module):
     def __init__(
         self,
         arena :AvoidingArena,
+        bayesian :bool=False,
+        n_samples :int|None=None,
         provenance :str='difftopkproofs',
         edge_penality :float=0.1
     ):
@@ -142,6 +144,8 @@ class PolicyNet(torch.nn.Module):
         super(PolicyNet, self).__init__()
 
         self.arena = arena
+        self.bayesian = bayesian
+        self.n_samples = n_samples
         self.provenance = provenance
         self.edge_penality = edge_penality
 
@@ -149,7 +153,7 @@ class PolicyNet(torch.nn.Module):
         self.nodes = [(i,j) for i in range(arena.grid_x) for j in range(arena.grid_y)]
 
         # neural component
-        self.cell_classifier = CellClassifier()
+        self.cell_classifier = CellClassifier(self.bayesian)
 
         # logical component
         self.path_planner = scallopy.Module(
@@ -238,7 +242,10 @@ class PolicyNet(torch.nn.Module):
         ).reshape(batch_size * self.num_cells, 3, self.arena.cell_size, self.arena.cell_size)
 
         # extract features
-        features = self.cell_classifier(cells).reshape(batch_size, self.num_cells, 4)
+        if self.bayesian:
+            features = self.cell_classifier.mc_forward(cells, self.n_samples).reshape(batch_size, self.num_cells, 4)
+        else:
+            features = self.cell_classifier.forward(cells).reshape(batch_size, self.num_cells, 4)
         agent_p = features[:, :, 0]
         target_p =  features[:, :, 1]
         enemy_p = features[:, :, 2]
