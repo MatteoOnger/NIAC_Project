@@ -126,7 +126,7 @@ class PolicyNet(torch.nn.Module):
         self,
         arena :AvoidingArena,
         bayesian :bool=False,
-        n_samples :int|None=None,
+        n_samples :int=1,
         provenance :str='difftopkproofs',
         edge_penality :float=0.1
     ):
@@ -135,6 +135,11 @@ class PolicyNet(torch.nn.Module):
         ----------
         arena : AvoidingArena
             Arena of the game.
+        bayesian : bool, optional
+            Whether to use a Bayesian cell classifier, by default ``False``.
+        n_samples : int, optional
+            Number of samples used in Bayesian inference, by default ``1``.
+            This parameter is ignored if ``bayesain=False``.
         provenance : str, optional
             Type of provenance used during execution, by default ``'difftopkproofs'``.
         edge_penality : float, optional
@@ -275,6 +280,8 @@ class DQNAgent():
         eps_decay :float=1000,
         lr :float=1e-4,
         tau :float=5e-3,
+        bayesian_net :bool=False,
+        n_samples :int=1,
         provenance :str='difftopkproofs'
     ):
         """
@@ -299,6 +306,11 @@ class DQNAgent():
             Learning rate of the optimizer, by default ``1e-4``.
         tau : float, optional
             Update rate of the target network, by default ``5e-3``.
+        bayesian : bool, optional
+            Whether to use a Bayesian cell classifier, by default ``False``.
+        n_samples : int, optional
+            Number of samples used in Bayesian inference, by default ``1``.
+            This parameter is ignored if ``bayesain=False``.
         provenance : str, optional
             Type of provenance used during execution, by default ``'difftopkproofs'``.
         """
@@ -311,13 +323,15 @@ class DQNAgent():
         self.eps_decay = eps_decay
         self.lr = lr
         self.tau = tau
+        self.bayesian_net = bayesian_net
+        self.n_samples = n_samples
         self.provenance = provenance
 
         self.training_steps_done = 0
         self.memory = Memory(self.memory_size)
 
-        self.policy_net = PolicyNet(arena, provenance=provenance)
-        self.target_net = PolicyNet(arena, provenance=provenance)
+        self.policy_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
+        self.target_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
         self.criterion = torch.nn.SmoothL1Loss()
