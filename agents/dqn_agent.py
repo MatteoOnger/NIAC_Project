@@ -26,6 +26,12 @@ class CellClassifier(torch.nn.Module):
     """
 
     def __init__(self, bayesian :bool=False):
+        """
+        Parameters
+        ----------
+        bayesian : bool, optional
+            Whether to use a Monte-Carlo dropout to approximate a Bayesian CNN, by default ``False``.
+        """
         super(CellClassifier, self).__init__()
         self.bayesian = bayesian
 
@@ -99,6 +105,11 @@ class CellClassifier(torch.nn.Module):
             Mean predicted class probabilities.
         std : torch.Tensor of shape (batch_size, 4)
             Standard deviation of the predicted class probabilities.
+
+        Notes
+        -----
+        Calling this method with ``self.bayesian = False`` produces the same output as the ``forward()`` method,
+        but it is slower.
         """
         prev_state = self.training
         self.train(False)
