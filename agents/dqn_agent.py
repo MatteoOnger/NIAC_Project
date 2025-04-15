@@ -248,7 +248,8 @@ class PolicyNet(torch.nn.Module):
 
         # extract features
         if self.bayesian:
-            features = self.cell_classifier.mc_forward(cells, self.n_samples).reshape(batch_size, self.num_cells, 4)
+            mean, _ = self.cell_classifier.mc_forward(cells, self.n_samples)
+            features = mean.reshape(batch_size, self.num_cells, 4)
         else:
             features = self.cell_classifier.forward(cells).reshape(batch_size, self.num_cells, 4)
         agent_p = features[:, :, 0]
