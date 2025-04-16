@@ -13,7 +13,10 @@ from .utils import extract_cell, image_to_torch, Memory, Transition
 
 
 
+DEVICE = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
 LOGGER = logging.getLogger(__name__)
+
+torch.set_default_device(DEVICE)
 
 
 
@@ -42,7 +45,6 @@ class CellClassifier(torch.nn.Module):
         self.fc_2 = torch.nn.Linear(in_features=256, out_features=4)
 
         self.dropout = torch.nn.Dropout(p=0.5)
-        self.flatten = torch.nn.Flatten()
         self.relu = torch.nn.ReLU()
         self.softmax = torch.nn.Softmax(dim=1)
         return
@@ -67,21 +69,17 @@ class CellClassifier(torch.nn.Module):
         if self.bayesian:
             self.dropout.train()
         
-        x = self.c2d_1(x)
-        x = self.relu(x)
+        # conv layers
+        x = self.relu(self.c2d_1(x))  # -> (_, 16, 16, 16)
+        x = self.relu(self.c2d_2(x))  # -> (_, 32,  4,  4)
 
-        x = self.c2d_2(x)
-        x = self.relu(x)
+        x = self.flatten(x)  # -> (_, 512)
 
-        x = self.flatten(x)
-
+        # dense layers
         x = self.dropout(x)
-        x = self.fc_1(x)
-        x = self.relu(x)
-
+        x = self.relu(self.fc_1(x))  # -> (_, 256)
         x = self.dropout(x)
-        x = self.fc_2(x)
-        x = self.softmax(x)
+        x = self.softmax(self.fc_2(x))  # -> (_, 4)
         return x
 
 
