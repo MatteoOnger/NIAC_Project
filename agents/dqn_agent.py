@@ -45,6 +45,7 @@ class CellClassifier(torch.nn.Module):
         self.fc_2 = torch.nn.Linear(in_features=256, out_features=4)
 
         self.dropout = torch.nn.Dropout(p=0.5)
+        self.flatten = torch.nn.Flatten()
         self.relu = torch.nn.ReLU()
         self.softmax = torch.nn.Softmax(dim=1)
         return
@@ -78,7 +79,6 @@ class CellClassifier(torch.nn.Module):
         # dense layers
         x = self.dropout(x)
         x = self.relu(self.fc_1(x))  # -> (_, 256)
-        x = self.dropout(x)
         x = self.softmax(self.fc_2(x))  # -> (_, 4)
         return x
 
