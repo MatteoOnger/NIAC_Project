@@ -568,7 +568,7 @@ class DQNAgent():
         # compute V(s_{t+1}) for all the next states
         next_state_values = torch.zeros(self.batch_size)
         with torch.no_grad():
-            next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1).values
+            next_state_values[non_final_mask] = self.target_net(non_final_next_states)[0].max(1).values
         # compute the expected Q(s_t, a)
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
