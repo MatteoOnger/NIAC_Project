@@ -197,8 +197,14 @@ class PolicyNet(torch.nn.Module):
                 // get the next position
                 rel next_position(xp, yp, a) = agent(x, y) and edge(x, y, xp, yp, a)
                 rel next_action(a) = next_position(x, y, a) and path(x, y, gx, gy) and target(gx, gy)
+
+                // constraint violation
+                rel too_many_goal() = n := count(x, y: target(x, y)), n > 1
+                rel too_many_enemy() = n := count(x, y: enemy(x, y)), n > {self.arena.num_enemies}
+                rel violation() = too_many_goal() or too_many_enemy()
             """,
             provenance = self.provenance,
+            k=1,
             facts = {
                 "node": [(torch.tensor(1 - self.edge_penality, requires_grad=False), node) for node in self.nodes]
             },
@@ -207,14 +213,16 @@ class PolicyNet(torch.nn.Module):
                 "target": self.nodes,
                 "enemy": self.nodes
             },
+            retain_topk={"agent": 3, "target": 3, "enemy": 7},
             output_mappings = {
-                "next_action": list(range(4))
+                "next_action": list(range(4)),
+                "violation": ()
             }
         )
         return
 
 
-    def forward(self, x :torch.Tensor) -> torch.Tensor:
+    def forward(self, x :torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Process input observations and predict the next action probabilities.
 
@@ -231,9 +239,12 @@ class PolicyNet(torch.nn.Module):
 
         Returns
         -------
-        : torch.Tensor of shape (B, A)
+        next_action : torch.Tensor of shape (B, A)
             A 2D tensor where A is the number of possible actions.
             Each row contains the softmax-normalized probabilities for the next action.
+        violation : torch.Tensor of shape (B,)
+            Probabilistic indicator of logic rule violations for each sample in the batch.
+            Indicates whether any constraints (e.g., multiple targets) were violated.
         """
         batch_size, n_channel, *_ = x.shape
 
@@ -261,15 +272,17 @@ class PolicyNet(torch.nn.Module):
             features = mean.reshape(batch_size, self.num_cells, 4)
         else:
             features = self.cell_classifier.forward(cells).reshape(batch_size, self.num_cells, 4)
+        
         agent_p = features[:, :, 0]
         target_p =  features[:, :, 1]
         enemy_p = features[:, :, 2]
         #empty_p = features[:, :, 3]
 
         # predict next action probabilities
-        next_actions = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
-        next_action = torch.softmax(next_actions, dim=1)
-        return next_action
+        results = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
+        next_action = torch.softmax(results["next_action"], dim=1)
+        violation = results["violation"]
+        return next_action, violation
 
 
 
@@ -344,7 +357,8 @@ class DQNAgent():
         self.target_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
-        self.criterion = torch.nn.SmoothL1Loss()
+        self.criterion1 = torch.nn.HuberLoss()
+        self.criterion2 = torch.nn.SmoothL1Loss()
         self.optimizer = torch.optim.RMSprop(self.policy_net.parameters(), self.lr)
         return
 
@@ -376,8 +390,8 @@ class DQNAgent():
         # add batch dimension
         rgb_array = rgb_array.unsqueeze(0)
 
-        action_scores = self.policy_net(rgb_array)
-        action = torch.argmax(action_scores, dim=1)
+        next_action, _ = self.policy_net(rgb_array)
+        action = torch.argmax(next_action, dim=1)
         return int(action)
 
 
@@ -548,9 +562,8 @@ class DQNAgent():
         reward_batch = torch.tensor(batch.reward)
 
         # compute Q(s_t, a) for the action taken
-        state_action_values = self.policy_net(
-            state_batch
-        ).gather(1, action_batch.unsqueeze(1)).squeeze(1)
+        next_action, violation = self.policy_net(state_batch)
+        state_action_values = next_action.gather(1, action_batch.unsqueeze(1)).squeeze(1)
         
         # compute V(s_{t+1}) for all the next states
         next_state_values = torch.zeros(self.batch_size)
@@ -560,7 +573,9 @@ class DQNAgent():
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
         # compute the loss
-        loss = self.criterion(state_action_values, expected_state_action_values)
+        loss1 = self.criterion1(state_action_values, expected_state_action_values)
+        loss2 = self.criterion2(violation.detach(), torch.zeros(self.batch_size))
+        loss = loss1 + loss2
 
         # optimize the model
         self.optimizer.zero_grad()
