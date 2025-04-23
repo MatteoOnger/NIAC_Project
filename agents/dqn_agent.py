@@ -305,7 +305,8 @@ class DQNAgent():
         tau :float=5e-3,
         bayesian_net :bool=False,
         n_samples :int=1,
-        provenance :str='difftopkproofs'
+        provenance :str='difftopkproofs',
+        model_state :Dict|None=None
     ):
         """
         Parameters
@@ -336,6 +337,9 @@ class DQNAgent():
             This parameter is ignored if ``bayesain=False``.
         provenance : str, optional
             Type of provenance used during execution, by default ``'difftopkproofs'``.
+        model_state : Dict | None, optional
+            Initial parameters of the model, by default ``None``.
+            If ``None``, parameters are randomly initialized.
         """
         self.arena = arena
         self.batch_size = batch_size
@@ -355,6 +359,9 @@ class DQNAgent():
 
         self.policy_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
         self.target_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
+        
+        if model_state is not None:
+            self.policy_net.load_state_dict(model_state)
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
         self.criterion1 = torch.nn.HuberLoss()
@@ -516,6 +523,19 @@ class DQNAgent():
         return None
 
 
+    def save_model(self, path :str) -> None:
+        """
+        Save the state dictionary of the policy network to a file.
+
+        Parameters
+        ----------
+        path : str
+            The file path where the model's state dictionary will be saved.
+        """
+        torch.save(self.policy_net.state_dict(), path)
+        return None
+
+
     def _eps_threshold(self) -> float:
         """
         Update epsilon according to the parameters provided during
@@ -580,6 +600,5 @@ class DQNAgent():
         # optimize the model
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 1000)
         self.optimizer.step()
         return loss.detach()
