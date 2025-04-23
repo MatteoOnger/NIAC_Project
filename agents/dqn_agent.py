@@ -306,7 +306,7 @@ class DQNAgent():
         bayesian_net :bool=False,
         n_samples :int=1,
         provenance :str='difftopkproofs',
-        model_state :Dict|None=None
+        model_weights_path :str=None
     ):
         """
         Parameters
@@ -337,8 +337,8 @@ class DQNAgent():
             This parameter is ignored if ``bayesain=False``.
         provenance : str, optional
             Type of provenance used during execution, by default ``'difftopkproofs'``.
-        model_state : Dict | None, optional
-            Initial parameters of the model, by default ``None``.
+        model_weights_path : Dict | None, optional
+            Path to the file containing the model's initial parameters, default ``None``.
             If ``None``, parameters are randomly initialized.
         """
         self.arena = arena
@@ -360,8 +360,8 @@ class DQNAgent():
         self.policy_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
         self.target_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
         
-        if model_state is not None:
-            self.policy_net.load_state_dict(model_state)
+        if model_weights_path is not None:
+            self.policy_net.load_state_dict(torch.load(model_weights_path, weights_only=True))
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
         self.criterion1 = torch.nn.HuberLoss()
