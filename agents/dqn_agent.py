@@ -121,8 +121,6 @@ class CellClassifier(torch.nn.Module):
 
         mean, std = preds.mean(axis=1), preds.std(axis=1)  # -> (_, 4)
 
-        LOGGER.info("calling Monte Carlo forward method with <self.bayesian> set to False")
-
         self.train(prev_state)
         return mean, std
 
