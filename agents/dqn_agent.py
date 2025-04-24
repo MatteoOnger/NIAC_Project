@@ -115,9 +115,13 @@ class CellClassifier(torch.nn.Module):
         if not self.bayesian:
             LOGGER.warning("calling Monte Carlo forward method with <self.bayesian> set to False")
 
-        # predictions of shape (n_samples, batch, 4)        
-        preds = torch.stack([self.forward(x) for _ in range(n_samples)])
-        mean, std = preds.mean(axis=0), preds.std(axis=0)
+        x = x.repeat_interleave(n_samples, axis=0)  # -> (_ * n_samples, 3, H, W)
+        preds = self.forward(x)                     # -> (_ * n_samples, 4)
+        preds = preds.reshape(-1, n_samples, 4)     # -> (_, n_samples, 4)
+
+        mean, std = preds.mean(axis=1), preds.std(axis=1)  # -> (_, 4)
+
+        LOGGER.info("calling Monte Carlo forward method with <self.bayesian> set to False")
 
         self.train(prev_state)
         return mean, std
