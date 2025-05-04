@@ -110,7 +110,7 @@ class CellClassifier(torch.nn.Module):
         but it is slower.
         """
         prev_state = self.training
-        self.train(False)
+        self.train(True)
 
         if not self.bayesian:
             LOGGER.warning("calling Monte Carlo forward method with <self.bayesian> set to False")
