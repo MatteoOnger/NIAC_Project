@@ -13,7 +13,10 @@ from .utils import extract_cell, image_to_torch, Memory, Transition
 
 
 
+DEVICE = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
 LOGGER = logging.getLogger(__name__)
+
+torch.set_default_device(DEVICE)
 
 
 
@@ -26,6 +29,12 @@ class CellClassifier(torch.nn.Module):
     """
 
     def __init__(self, bayesian :bool=False):
+        """
+        Parameters
+        ----------
+        bayesian : bool, optional
+            Whether to use a Monte-Carlo dropout to approximate a Bayesian CNN, by default ``False``.
+        """
         super(CellClassifier, self).__init__()
         self.bayesian = bayesian
 
@@ -61,21 +70,17 @@ class CellClassifier(torch.nn.Module):
         if self.bayesian:
             self.dropout.train()
         
-        x = self.c2d_1(x)
-        x = self.relu(x)
+        # conv layers
+        x = self.relu(self.c2d_1(x))  # -> (_, 16, 16, 16)
+        x = self.relu(self.c2d_2(x))  # -> (_, 32,  4,  4)
 
-        x = self.c2d_2(x)
-        x = self.relu(x)
+        x = self.flatten(x)  # -> (_, 512)
 
-        x = self.flatten(x)
-
+        # dense layers
         x = self.dropout(x)
-        x = self.fc_1(x)
-        x = self.relu(x)
-
+        x = self.relu(self.fc_1(x))  # -> (_, 256)
         x = self.dropout(x)
-        x = self.fc_2(x)
-        x = self.softmax(x)
+        x = self.softmax(self.fc_2(x))  # -> (_, 4)
         return x
 
 
@@ -99,16 +104,23 @@ class CellClassifier(torch.nn.Module):
             Mean predicted class probabilities.
         std : torch.Tensor of shape (batch_size, 4)
             Standard deviation of the predicted class probabilities.
+
+        Notes
+        -----
+        Calling this method with ``self.bayesian = False`` produces the same output as the ``forward()`` method,
+        but it is slower.
         """
         prev_state = self.training
-        self.train(False)
+        self.train(True)
 
         if not self.bayesian:
             LOGGER.warning("calling Monte Carlo forward method with <self.bayesian> set to False")
 
-        # predictions of shape (n_samples, batch, 4)        
-        preds = torch.stack([self.forward(x) for _ in range(n_samples)])
-        mean, std = preds.mean(axis=0), preds.std(axis=0)
+        x = x.repeat_interleave(n_samples, axis=0)  # -> (_ * n_samples, 3, H, W)
+        preds = self.forward(x)                     # -> (_ * n_samples, 4)
+        preds = preds.reshape(-1, n_samples, 4)     # -> (_, n_samples, 4)
+
+        mean, std = preds.mean(axis=1), preds.std(axis=1)  # -> (_, 4)
 
         self.train(prev_state)
         return mean, std
@@ -188,8 +200,14 @@ class PolicyNet(torch.nn.Module):
                 // get the next position
                 rel next_position(xp, yp, a) = agent(x, y) and edge(x, y, xp, yp, a)
                 rel next_action(a) = next_position(x, y, a) and path(x, y, gx, gy) and target(gx, gy)
+
+                // constraint violation
+                rel too_many_goal() = n := count(x, y: target(x, y)), n > 1
+                rel too_many_enemy() = n := count(x, y: enemy(x, y)), n > {self.arena.num_enemies}
+                rel violation() = too_many_goal() or too_many_enemy()
             """,
             provenance = self.provenance,
+            k=1,
             facts = {
                 "node": [(torch.tensor(1 - self.edge_penality, requires_grad=False), node) for node in self.nodes]
             },
@@ -198,14 +216,16 @@ class PolicyNet(torch.nn.Module):
                 "target": self.nodes,
                 "enemy": self.nodes
             },
+            retain_topk={"agent": 3, "target": 3, "enemy": 7},
             output_mappings = {
-                "next_action": list(range(4))
+                "next_action": list(range(4)),
+                "violation": ()
             }
         )
         return
 
 
-    def forward(self, x :torch.Tensor) -> torch.Tensor:
+    def forward(self, x :torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Process input observations and predict the next action probabilities.
 
@@ -222,9 +242,12 @@ class PolicyNet(torch.nn.Module):
 
         Returns
         -------
-        : torch.Tensor of shape (B, A)
+        next_action : torch.Tensor of shape (B, A)
             A 2D tensor where A is the number of possible actions.
             Each row contains the softmax-normalized probabilities for the next action.
+        violation : torch.Tensor of shape (B,)
+            Probabilistic indicator of logic rule violations for each sample in the batch.
+            Indicates whether any constraints (e.g., multiple targets) were violated.
         """
         batch_size, n_channel, *_ = x.shape
 
@@ -252,19 +275,21 @@ class PolicyNet(torch.nn.Module):
             features = mean.reshape(batch_size, self.num_cells, 4)
         else:
             features = self.cell_classifier.forward(cells).reshape(batch_size, self.num_cells, 4)
+        
         agent_p = features[:, :, 0]
         target_p =  features[:, :, 1]
         enemy_p = features[:, :, 2]
         #empty_p = features[:, :, 3]
 
         # predict next action probabilities
-        next_actions = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
-        next_action = torch.softmax(next_actions, dim=1)
-        return next_action
+        results = self.path_planner(agent=agent_p, target=target_p, enemy=enemy_p)
+        next_action = torch.softmax(results["next_action"], dim=1)
+        violation = results["violation"]
+        return next_action, violation
 
 
 
-class DQNAgent():
+class DQNSAgent():
     """
     Agent, based on Deep Q-Network, that uses an 
     epsilon-greedy policy to solve the Pacaman Maze game.
@@ -283,7 +308,8 @@ class DQNAgent():
         tau :float=5e-3,
         bayesian_net :bool=False,
         n_samples :int=1,
-        provenance :str='difftopkproofs'
+        provenance :str='difftopkproofs',
+        model_weights_path :str=None
     ):
         """
         Parameters
@@ -314,6 +340,9 @@ class DQNAgent():
             This parameter is ignored if ``bayesain=False``.
         provenance : str, optional
             Type of provenance used during execution, by default ``'difftopkproofs'``.
+        model_weights_path : Dict | None, optional
+            Path to the file containing the model's initial parameters, default ``None``.
+            If ``None``, parameters are randomly initialized.
         """
         self.arena = arena
         self.batch_size = batch_size
@@ -333,9 +362,13 @@ class DQNAgent():
 
         self.policy_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
         self.target_net = PolicyNet(arena, bayesian=bayesian_net, n_samples=n_samples, provenance=provenance)
+        
+        if model_weights_path is not None:
+            self.policy_net.load_state_dict(torch.load(model_weights_path, weights_only=True))
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
-        self.criterion = torch.nn.SmoothL1Loss()
+        self.criterion1 = torch.nn.HuberLoss()
+        self.criterion2 = torch.nn.SmoothL1Loss()
         self.optimizer = torch.optim.RMSprop(self.policy_net.parameters(), self.lr)
         return
 
@@ -367,8 +400,8 @@ class DQNAgent():
         # add batch dimension
         rgb_array = rgb_array.unsqueeze(0)
 
-        action_scores = self.policy_net(rgb_array)
-        action = torch.argmax(action_scores, dim=1)
+        next_action, _ = self.policy_net(rgb_array)
+        action = torch.argmax(next_action, dim=1)
         return int(action)
 
 
@@ -493,6 +526,19 @@ class DQNAgent():
         return None
 
 
+    def save_model(self, path :str) -> None:
+        """
+        Save the state dictionary of the policy network to a file.
+
+        Parameters
+        ----------
+        path : str
+            The file path where the model's state dictionary will be saved.
+        """
+        torch.save(self.policy_net.state_dict(), path)
+        return None
+
+
     def _eps_threshold(self) -> float:
         """
         Update epsilon according to the parameters provided during
@@ -539,23 +585,23 @@ class DQNAgent():
         reward_batch = torch.tensor(batch.reward)
 
         # compute Q(s_t, a) for the action taken
-        state_action_values = self.policy_net(
-            state_batch
-        ).gather(1, action_batch.unsqueeze(1)).squeeze(1)
+        next_action, violation = self.policy_net(state_batch)
+        state_action_values = next_action.gather(1, action_batch.unsqueeze(1)).squeeze(1)
         
         # compute V(s_{t+1}) for all the next states
         next_state_values = torch.zeros(self.batch_size)
         with torch.no_grad():
-            next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1).values
+            next_state_values[non_final_mask] = self.target_net(non_final_next_states)[0].max(1).values
         # compute the expected Q(s_t, a)
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
         # compute the loss
-        loss = self.criterion(state_action_values, expected_state_action_values)
+        loss1 = self.criterion1(state_action_values, expected_state_action_values)
+        loss2 = self.criterion2(violation.detach(), torch.zeros(self.batch_size))
+        loss = loss1 + loss2
 
         # optimize the model
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 1000)
         self.optimizer.step()
         return loss.detach()
