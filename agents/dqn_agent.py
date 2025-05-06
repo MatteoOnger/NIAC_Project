@@ -289,7 +289,7 @@ class PolicyNet(torch.nn.Module):
 
 
 
-class DQNAgent():
+class DQNSAgent():
     """
     Agent, based on Deep Q-Network, that uses an 
     epsilon-greedy policy to solve the Pacaman Maze game.
