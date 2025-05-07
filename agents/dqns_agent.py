@@ -22,7 +22,7 @@ torch.set_default_device(DEVICE)
 
 class CellClassifier(torch.nn.Module):
     """
-    A convolutional neural network for cell image classification with optional Bayesian dropout.
+    A convolutional neural network for cell image classification with optional MC Bayesian dropout.
 
     This model includes convolutional layers followed by fully connected layers and
     uses dropout to enable Monte Carlo (MC) sampling for Bayesian inference.
@@ -68,7 +68,7 @@ class CellClassifier(torch.nn.Module):
             Output tensor representing class probabilities.
         """
         if self.bayesian:
-            self.dropout.train()
+            self.dropout.train(True)
         
         # conv layers
         x = self.relu(self.c2d_1(x))  # -> (_, 16, 16, 16)
@@ -110,9 +110,6 @@ class CellClassifier(torch.nn.Module):
         Calling this method with ``self.bayesian = False`` produces the same output as the ``forward()`` method,
         but it is slower.
         """
-        prev_state = self.training
-        self.train(True)
-
         if not self.bayesian:
             LOGGER.warning("calling Monte Carlo forward method with <self.bayesian> set to False")
 
@@ -121,8 +118,6 @@ class CellClassifier(torch.nn.Module):
         preds = preds.reshape(-1, n_samples, 4)     # -> (_, n_samples, 4)
 
         mean, std = preds.mean(axis=1), preds.std(axis=1)  # -> (_, 4)
-
-        self.train(prev_state)
         return mean, std
 
 
